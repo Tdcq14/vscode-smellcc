@@ -1,5 +1,6 @@
 {
   "name": "vscode-smellcc",
+  "publisher": "zyhelm",
   "displayName": "vscode-smellcc",
   "description": "A code smell refactoring tool based on LLM.",
   "version": "0.0.1",
