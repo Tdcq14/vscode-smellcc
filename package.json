@@ -1,0 +1,57 @@
+{
+  "name": "vscode-smellcc",
+  "displayName": "vscode-smellcc",
+  "description": "A code smell refactoring tool based on LLM.",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.106.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "smellcc.refactor",
+        "title": "SMELLCC: Refactor Code Smell"
+      }
+    ],
+    "configuration": {
+      "title": "SMELLCC",
+      "properties": {
+        "smellcc.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API Key for ChatAnywhere/DeepSeek (e.g., sk-...)"
+        },
+        "smellcc.model": {
+          "type": "string",
+          "default": "deepseek-v3",
+          "description": "Model Name"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.106.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "typescript-eslint": "^8.46.3",
+    "eslint": "^9.39.1",
+    "typescript": "^5.9.3",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2"
+  }
+}
