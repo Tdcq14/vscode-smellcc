@@ -1,7 +1,5 @@
 # SMELLCC: LLM-based Code Smell Refactoring
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
 This VS Code extension is an implementation of the prototype system described in the TOSEM paper: **"Clean Code, Better Models: Enhancing LLM Performance with Smell-Cleaned Dataset"**.
 
 It leverages Large Language Models (LLM) to automatically detect and refactor the **Top-10** most frequent code smells in Python codebases.
