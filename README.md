@@ -1,71 +1,79 @@
-# vscode-smellcc README
+# SMELLCC: LLM-based Code Smell Refactoring
 
-This is the README for your extension "vscode-smellcc". After writing up a brief description, we recommend including the following sections.
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+This VS Code extension is an implementation of the prototype system described in the TOSEM paper: **"Clean Code, Better Models: Enhancing LLM Performance with Smell-Cleaned Dataset"**.
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+It leverages Large Language Models (LLM) to automatically detect and refactor the **Top-10** most frequent code smells in Python codebases.
 
-For example if there is an image subfolder under your extension project workspace:
+## ✨ Features
 
-\!\[feature X\]\(images/feature-x.png\)
+* **🔍 Automatic Detection**: Real-time detection of 10 types of code smells (e.g., Long Parameter List, Collapsible If, Dead Code).
+* **🤖 AI-Powered Refactoring**: Utilizes **Chain-of-Thought (CoT)** prompting strategies to generate high-quality, context-aware fixes.
+* **💡 Quick Fix Integration**: Seamlessly integrated with VS Code's native "Lightbulb" interface.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
-
-## Requirements
-
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+### Supported Code Smells
+1.  Collapsible if Statements
+2.  Long Parameter List
+3.  Naming Convention
+4.  Commented Code
+5.  Empty Nested Code Blocks
+6.  Dead Code
+7.  Self-assigned Variables
+8.  Identical Expressions
+9.  Return and Yield
+10. High Cognitive Complexity
 
 ---
 
-## Following extension guidelines
+## 📥 Installation
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+Since this extension is currently in the prototype stage, please install it manually using the `.vsix` package:
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+1.  Download the latest `vscode-smellcc-0.0.1.vsix` file from our [GitHub Releases](#).
+2.  Open **VS Code**.
+3.  Go to the **Extensions** view (Click the square icon on the left sidebar or press `Ctrl+Shift+X`).
+4.  Click the **"..." (Views and More Actions)** menu at the top-right of the Extensions view.
+5.  Select **"Install from VSIX..."**.
+6.  Choose the downloaded `.vsix` file.
 
-## Working with Markdown
+---
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+## ⚙️ Configuration (Required)
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+To use the AI refactoring capabilities, you must configure your LLM API Key.
 
-## For more information
+1.  Open VS Code Settings:
+    * **Windows/Linux**: `File` > `Preferences` > `Settings` (or press `Ctrl + ,`).
+    * **macOS**: `Code` > `Settings` > `Settings` (or press `Cmd + ,`).
+2.  Search for **`smellcc`** in the search bar.
+3.  Enter your API Key in the **`Smellcc: Api Key`** field.
+    * *Note: The default endpoint is compatible with DeepSeek/OpenAI interfaces.*
+4.  (Optional) Change the **`Smellcc: Model`** if needed (Default: `deepseek-v3`).
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+---
 
-**Enjoy!**
+## 🚀 Usage Guide
+
+1.  Open any **Python** (`.py`) file.
+2.  If the extension detects a code smell, you will see a **Yellow/Warning Squiggly Line** under the code.
+3.  Hover over the code or click on it.
+4.  Click the **Lightbulb icon 💡** (or press `Ctrl + .` / `Cmd + .`).
+5.  Select **"Fix with SMELLCC (AI Refactor)"**.
+6.  Wait for the progress bar to finish. The code will be automatically refactored!
+
+---
+
+## 📋 Requirements
+
+* VS Code version 1.80.0 or higher.
+* Active Internet connection (to access the LLM API).
+
+## 🔗 References
+
+* **Paper**: *Clean Code, Better Models: Enhancing LLM Performance with Smell-Cleaned Dataset* (TOSEM).
+* **Prototype**: SMELLCC Tool.
+
+---
+
+**Enjoy writing Clean Code!**
