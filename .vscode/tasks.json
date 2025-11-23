@@ -4,6 +4,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
+			"name":"vscode-smellcc",
 			"type": "npm",
 			"script": "watch",
 			"problemMatcher": "$tsc-watch",

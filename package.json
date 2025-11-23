@@ -1,23 +1,23 @@
 {
-  "name": "vscode-smellcc",
-  "publisher": "zyhelm",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Tdcq14/vscode-smellcc.git"
-  },
-  "displayName": "vscode-smellcc",
-  "description": "A code smell refactoring tool based on LLM.",
-  "version": "0.0.1",
+  "name": "smellcc",
+  "displayName": "SMELLCC: Refactoring Tool",
+  "description": "LLM-based Code Smell Refactoring Tool",
+  "version": "0.0.2",
+  "publisher": "zyhelm", 
   "engines": {
-    "vscode": "^1.106.0"
+    "vscode": "^1.80.0"
   },
-  "categories": [
-    "Other"
+  "categories": ["Other"],
+  "activationEvents": ["onLanguage:python"],
+  
+  "main": "./dist/extension.js", 
+  
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  },
+  "extensionDependencies": [
+    "SonarSource.sonarlint-vscode"
   ],
-  "activationEvents": [
-    "onLanguage:python"
-  ],
-  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
@@ -26,37 +26,37 @@
       }
     ],
     "configuration": {
-      "title": "SMELLCC",
+      "title": "SMELLCC Configuration",
       "properties": {
         "smellcc.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "API Key for ChatAnywhere/DeepSeek (e.g., sk-...)"
+            "type": "string",
+            "default": "",
+            "description": "LLM API Key"
+        },
+        "smellcc.apiBaseUrl": {
+            "type": "string",
+            "default": "https://api.deepseek.com",
+            "description": "API Base URL"
         },
         "smellcc.model": {
-          "type": "string",
-          "default": "deepseek-v3",
-          "description": "Model Name"
+            "type": "string",
+            "default": "deepseek-coder",
+            "description": "Model Name"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run package",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.106.0",
     "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "typescript-eslint": "^8.46.3",
-    "eslint": "^9.39.1",
+    "@types/node": "^24.10.1",
+    "@types/vscode": "^1.106.1",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "vsce": "^2.15.0"
   }
 }

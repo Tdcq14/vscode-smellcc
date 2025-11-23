@@ -1,176 +1,167 @@
 // src/extension.ts
 import * as vscode from 'vscode';
-import { detectSmells, SMELL_TYPES } from './detector'; 
+import { mirrorSonarDiagnostics, mapRuleToPromptType } from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
 import { callLLMApi } from './llmClient';
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('SMELLCC Extension Activated! (Final Fix)');
+    console.log('SMELLCC Activated!');
+
+    // 依赖检查
+    const sonarExt = vscode.extensions.getExtension('SonarSource.sonarlint-vscode');
+    if (!sonarExt) {
+        vscode.window.showWarningMessage('SMELLCC needs "SonarLint".', 'Install').then(sel => {
+            if (sel === 'Install') vscode.env.openExternal(vscode.Uri.parse('vscode:extension/SonarSource.sonarlint-vscode'));
+        });
+    }
 
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
     context.subscriptions.push(diagnosticCollection);
 
-    const runDetection = (document: vscode.TextDocument) => {
-        if (document.languageId === 'python') {
-            const diags = detectSmells(document);
-            diagnosticCollection.set(document.uri, diags);
+    // 监听诊断变化
+    const handleDiagnosticsChange = () => {
+        if (vscode.window.activeTextEditor) {
+            mirrorSonarDiagnostics(vscode.window.activeTextEditor.document, diagnosticCollection);
         }
     };
 
-    if (vscode.window.activeTextEditor) {
-        runDetection(vscode.window.activeTextEditor.document);
-    }
     context.subscriptions.push(
-        vscode.workspace.onDidChangeTextDocument(e => runDetection(e.document)),
-        vscode.workspace.onDidOpenTextDocument(runDetection)
+        vscode.languages.onDidChangeDiagnostics(handleDiagnosticsChange),
+        vscode.workspace.onDidOpenTextDocument(handleDiagnosticsChange),
+        vscode.workspace.onDidSaveTextDocument(handleDiagnosticsChange)
     );
 
+    // 注册修复提供者
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new SmellCCActionProvider(), {
             providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
         })
     );
 
+    // 注册重构命令
     context.subscriptions.push(
-        vscode.commands.registerCommand('smellcc.refactor', async (document: vscode.TextDocument, range: vscode.Range, smellType: string) => {
+        vscode.commands.registerCommand('smellcc.refactor', async (document: vscode.TextDocument, range: vscode.Range, ruleId: string) => {
             
-            const expandedRange = expandRange(document, range, smellType);
+            // === ⚡️ 核心升级：智能扩充上下文 ⚡️ ===
+            // 无论报错在哪里，都尝试获取整个包裹它的函数
+            const expandedRange = expandRangeToFunction(document, range);
             const smellyCode = document.getText(expandedRange);
-            
-            const prompt = buildSmellCCPrompt(smellType, smellyCode);
+
+            console.log(`[SMELLCC] Context Code:\n${smellyCode}`); // 调试日志
+
+            const prompt = buildSmellCCPrompt(ruleId, smellyCode);
 
             await vscode.window.withProgress({
                 location: vscode.ProgressLocation.Notification,
-                title: `SMELLCC: Fixing ${smellType}...`,
+                title: `SMELLCC: Fixing...`,
                 cancellable: false
             }, async () => {
                 try {
                     const newCode = await callLLMApi(prompt);
-
-                    const edit = new vscode.WorkspaceEdit();
                     
-                    // ⚡️ 修复：Commented Code 逻辑简化
-                    // 如果是注释代码且 LLM 返回空，直接用空字符串替换选区
-                    if (smellType === SMELL_TYPES.COMMENTED_CODE && newCode.trim().length === 0) {
-                         edit.replace(document.uri, expandedRange, ""); 
+                    const edit = new vscode.WorkspaceEdit();
+                    // 替换扩充后的整个范围（通常是整个函数）
+                    edit.replace(document.uri, expandedRange, newCode);
+                    
+                    const success = await vscode.workspace.applyEdit(edit);
+                    
+                    if (success) {
+                        vscode.window.showInformationMessage('SMELLCC: Refactoring Applied!');
+                        await document.save(); // 自动保存以触发重新检测
                     } else {
-                         edit.replace(document.uri, expandedRange, newCode);
+                        vscode.window.showErrorMessage('SMELLCC: Failed to apply edit.');
                     }
-
-                    await vscode.workspace.applyEdit(edit);
-
-                    vscode.window.showInformationMessage('SMELLCC: Refactoring successful!');
                 } catch (err: any) {
-                    vscode.window.showErrorMessage(`Refactor Failed: ${err.message}`);
+                    vscode.window.showErrorMessage(`Error: ${err.message}`);
                 }
             });
         })
     );
 }
 
-function expandRange(document: vscode.TextDocument, originalRange: vscode.Range, smellType: string): vscode.Range {
+// === 辅助函数：向外寻找最近的函数定义 ===
+// 逻辑：向上找 'def'，向下找缩进结束
+function expandRangeToFunction(document: vscode.TextDocument, originalRange: vscode.Range): vscode.Range {
+    let startLine = originalRange.start.line;
+    let endLine = originalRange.end.line;
+
+    // 1. 向上找 'def ' (假设 Python)
+    let foundDef = false;
+    let defLineIndex = startLine;
     
-    // ⚡️ 修复：Commented Code 范围计算
-    // 使用 rangeIncludingLineBreak 确保选中整行（含换行符），这样替换为空字符串时才会真正删除该行
-    if (smellType === SMELL_TYPES.COMMENTED_CODE) {
-        let startLine = originalRange.start.line;
-        let endLine = originalRange.end.line;
-
-        // 向上找
-        while (startLine > 0) {
-            const prevLine = document.lineAt(startLine - 1);
-            if (prevLine.text.trim().startsWith('#')) {
-                startLine--;
-            } else {
-                break;
-            }
+    // 限制向上找 100 行
+    for (let i = startLine; i >= Math.max(0, startLine - 100); i--) {
+        const lineText = document.lineAt(i).text;
+        // 匹配 def 开头 (忽略前面的空格)
+        if (/^\s*def\s+/.test(lineText)) {
+            defLineIndex = i;
+            foundDef = true;
+            break;
         }
-        // 向下找
-        while (endLine < document.lineCount - 1) {
-            const nextLine = document.lineAt(endLine + 1);
-            if (nextLine.text.trim().startsWith('#')) {
-                endLine++;
-            } else {
-                break;
-            }
-        }
-        
-        // 构造包含换行符的完整范围
-        const start = document.lineAt(startLine).rangeIncludingLineBreak.start;
-        // 注意：endLine 这一行的 rangeIncludingLineBreak.end 包含了它后面的换行符
-        const end = document.lineAt(endLine).rangeIncludingLineBreak.end;
-        
-        return new vscode.Range(start, end);
     }
 
-    // 结构性异味 (保持全函数逻辑)
-    const structuralSmells = [
-        SMELL_TYPES.LONG_PARAM,         
-        SMELL_TYPES.NAMING,             
-        SMELL_TYPES.HIGH_COMPLEXITY,    
-        SMELL_TYPES.RETURN_YIELD,       
-        SMELL_TYPES.EMPTY_NESTED,       
-        SMELL_TYPES.SELF_ASSIGN,        
-        SMELL_TYPES.DEAD_CODE,          
-        SMELL_TYPES.IDENTICAL_EXPR,
-        SMELL_TYPES.COLLAPSIBLE_IF      
-    ];
-
-    if (structuralSmells.includes(smellType)) {
-        const startLine = originalRange.start.line;
-        let defLine = startLine;
-        let foundDef = false;
-        
-        const MAX_LOOKUP = 50;
-        for (let i = 0; i < MAX_LOOKUP; i++) {
-            if (defLine < 0) break;
-            const lineText = document.lineAt(defLine).text;
-            if (lineText.trim().startsWith('def ')) {
-                foundDef = true;
-                break;
-            }
-            defLine--;
-        }
-
-        if (!foundDef) {
-            return document.lineAt(originalRange.start.line).rangeIncludingLineBreak;
-        }
-
-        const defLineText = document.lineAt(defLine).text;
-        const matchDefIndent = defLineText.match(/^(\s*)/);
-        const baseIndent = matchDefIndent ? matchDefIndent[1].length : 0;
-        
-        let endLine = defLine;
-        for (let i = defLine + 1; i < document.lineCount; i++) {
-            const line = document.lineAt(i);
-            if (line.isEmptyOrWhitespace) continue;
-            
-            const currentIndent = line.text.match(/^\s*/)?.[0].length || 0;
-            if (currentIndent <= baseIndent) {
-                if (!line.text.trim().startsWith('#')) break;
-            }
-            endLine = i;
-        }
-        
-        return new vscode.Range(new vscode.Position(defLine, 0), document.lineAt(endLine).range.end);
+    // 如果没找到函数定义（比如是全局变量），就只处理当前行
+    if (!foundDef) {
+        return document.lineAt(startLine).range; 
     }
 
-    return document.lineAt(originalRange.start.line).rangeIncludingLineBreak;
+    // 2. 向下找函数结束 (通过缩进判断)
+    const defLine = document.lineAt(defLineIndex);
+    const defIndent = defLine.firstNonWhitespaceCharacterIndex;
+    
+    let finalLineIndex = endLine;
+    
+    // 从 def 的下一行开始找
+    for (let i = defLineIndex + 1; i < document.lineCount; i++) {
+        const line = document.lineAt(i);
+        
+        // 跳过空行，空行属于函数的一部分
+        if (line.isEmptyOrWhitespace) continue; 
+
+        const currentIndent = line.firstNonWhitespaceCharacterIndex;
+        
+        // 如果当前行缩进 <= def 的缩进，说明函数结束了（遇到了下一个同级或上级语句）
+        if (currentIndent <= defIndent) {
+            finalLineIndex = i - 1;
+            break;
+        }
+        finalLineIndex = i;
+    }
+
+    // 修正边界：如果最后几行是空行，去掉它们
+    while (finalLineIndex > defLineIndex && document.lineAt(finalLineIndex).isEmptyOrWhitespace) {
+        finalLineIndex--;
+    }
+
+    // 返回整个函数的 Range
+    return new vscode.Range(
+        new vscode.Position(defLineIndex, 0), 
+        document.lineAt(finalLineIndex).range.end
+    );
 }
 
 class SmellCCActionProvider implements vscode.CodeActionProvider {
     provideCodeActions(document: vscode.TextDocument, range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
-        return context.diagnostics
-            .filter(d => d.source === 'SMELLCC')
-            .map(diag => {
-                const action = new vscode.CodeAction(`Fix '${diag.code}' with SMELLCC`, vscode.CodeActionKind.QuickFix);
+        const actions: vscode.CodeAction[] = [];
+
+        for (const diag of context.diagnostics) {
+            // 必须匹配 SMELLCC 的源
+            if (diag.source === 'SMELLCC') {
+                // diag.code 存的是 Rule ID (如 python:S101)
+                const ruleId = String(diag.code);
+                const smellName = mapRuleToPromptType(ruleId);
+
+                const action = new vscode.CodeAction(`Refactor: ${smellName} (SMELLCC)`, vscode.CodeActionKind.QuickFix);
                 action.command = {
                     command: 'smellcc.refactor',
                     title: 'Refactor',
-                    arguments: [document, diag.range, diag.code]
+                    arguments: [document, diag.range, ruleId] // 传入原始 Range，让命令去扩充
                 };
-                return action;
-            });
+                action.isPreferred = true;
+                actions.push(action);
+            }
+        }
+        return actions;
     }
 }
 
