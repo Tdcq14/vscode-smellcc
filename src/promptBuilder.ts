@@ -1,127 +1,222 @@
 // src/promptBuilder.ts
 import { SMELL_TYPES } from './detector';
+import { getMinIndentation, deIndent, reIndent } from './indentUtils';
 
-export function buildSmellCCPrompt(smellType: string, codeSnippet: string): string {
+export function buildSmellCCPrompt(
+    smellType: string, 
+    codeSnippet: string, 
+    sonarMessage: string = "", 
+    relativeLine: number = 0,
+    targetLineText: string = "" // [NEW] 接收代码内容用于定位
+): string {
+
+    // === 1. 预处理：去缩进 ===
+    const baseIndent = getMinIndentation(codeSnippet);
+    const cleanCode = deIndent(codeSnippet, baseIndent);
     
-    const systemPrompt = `System: You are an expert software engineer. Given a context including a text describing a type of code smell, your task is to refactor the code to eliminate the code smell while the functionality implemented by the code remains unchanged.`;
+    // 2. 智能上下文检测
+    const isClassContext = /self\.|def\s+\w+\s*\(self/.test(cleanCode);
+    let codeToPrompt = cleanCode;
+    
+    // === 策略：伪装类上下文 (仅针对高认知复杂度) ===
+    if (isClassContext && smellType === SMELL_TYPES.HIGH_COMPLEXITY) {
+        codeToPrompt = `class RefactoringContext:\n${reIndent(cleanCode, 4)}`;
+    }
+
+    // 系统提示词：设定严格规则
+    const systemPrompt = `System: You are an expert Python developer. Your task is to refactor the provided code to fix a specific code smell reported by SonarQube.
+
+CRITICAL RULES:
+1. **NO LOGIC CHANGES**: The functionality must remain EXACTLY the same.
+2. **OUTPUT**: Return ONLY the raw Python code. NO Markdown, NO explanations.
+3. **INDENTATION**: The input code is flattened (0-indent). Your output MUST start at 0-indent.`;
+
+    // 注入上下文：加入代码内容验证
+    let contextInfo = `[SonarQube Report]\nIssue Type: ${smellType}\nMessage: "${sonarMessage}"`;
+    if (relativeLine > 0) {
+        contextInfo += `\nTarget Location: Line ${relativeLine}.`;
+        if (targetLineText) {
+            contextInfo += `\nTarget Code Verification: The line at location ${relativeLine} MUST MATCH: "${targetLineText}"`;
+        }
+    }
 
     let introText = "";
-    let stepsText = "";
+    let promptInstructions = "";
 
     switch (smellType) {
-        // === 新增的 4 类 Naming Prompt ===
+        // ==========================================
+        // 1. Naming Conventions (Group 1-4)
+        // ==========================================
         case SMELL_TYPES.NAMING_CLASS:
-            introText = `The following code may contain irregular naming issue for class name. We need to modify the non-standard class name to comply with the naming rules: All class names should match the regular expression ^[A-Z_][a-zA-Z0-9]+$.`;
-            stepsText = `To solve the problem, first identify the class name in the code to be refactored, and then modify it to conform to the class name naming rules. 
-You only need to modify the identified class name, and do not make any changes to other code.`;
+            introText = `Irregular class name detected. Must match ^[A-Z_][a-zA-Z0-9]+$ (CamelCase).`;
+            promptInstructions = `1. Identify the class at **Line ${relativeLine}**.
+2. Rename it to CamelCase (e.g., 'my_class' -> 'MyClass').
+3. Update ALL usages.`;
+            break;
+
+        case SMELL_TYPES.NAMING_FUNC: 
+            introText = `Irregular function name detected. Must match ^[a-z_][a-z0-9_]{2,}$ (snake_case).`;
+            promptInstructions = `1. Identify the function at **Line ${relativeLine}**.
+2. Rename it to snake_case (e.g., 'myFunc' -> 'my_func').
+3. Update ALL usages.`;
             break;
 
         case SMELL_TYPES.NAMING_METHOD:
-            introText = `The following code may contain irregular naming issues for one or more method names. We need to modify them to comply with the naming rules: All method names should match the regular expression ^[a-z_][a-z0-9_]{2,}$.`;
-            stepsText = `Step 1 - Identify the method name in the code and check whether its naming conforms to the naming rules we specified above.
-When identifying, just pay attention to the method name in the code outside the brackets because there will be no method name inside the brackets in a line of code!
-Step 2 - If the identified method name does not conform to the naming rules, modify its name to match the regular expression ^[a-z_][a-z0-9_]{2,}$; if it conforms, no modification is required.
-Step 3 - Output the complete code after refactoring based on the above steps.`;
+            introText = `Irregular method name detected. Must match ^[a-z_][a-z0-9_]{2,}$ (snake_case).`;
+            promptInstructions = `1. Identify the method at **Line ${relativeLine}**.
+2. Rename it to snake_case.
+3. Update ALL usages.`;
             break;
 
         case SMELL_TYPES.NAMING_FIELD:
-            introText = `The following code may contain irregular naming issues for one or more field names. We need to modify them to comply with the naming rules: All field names should match the regular expression ^[_a-z][_a-z0-9]*$.`;
-            stepsText = `Step 1 - Identify the field name in the code (usually "self.field_name = value" or "field_name = value").
-Step 2 - If the identified field name does not conform to the naming rules, modify its name to match the regular expression ^[_a-z][_a-z0-9]*$.
-Step 3 - Check whether the field name before and after modification has changed and conforms.
-Step 4 - Output the complete code after refactoring based on the above steps.`;
+            introText = `Irregular field name detected. Must match ^[_a-z][_a-z0-9]*$ (snake_case).`;
+            promptInstructions = `1. Identify the field (self.xxx) at **Line ${relativeLine}**.
+2. Rename it to snake_case.
+3. Update ALL usages.`;
             break;
 
-        case SMELL_TYPES.NAMING_FUNC:
-            introText = `The following code may contain irregular naming issues for one or more function names. We need to modify them to comply with the naming rules: All function names should match the regular expression ^[a-z_][a-z0-9_]{2,}$.`;
-            stepsText = `Step 1 - Identify the function name in the code and check whether its naming conforms. Just pay attention to the function name outside the brackets!
-Step 2 - If it does not conform, modify its name to match ^[a-z_][a-z0-9_]{2,}$.
-Step 3 - Check whether the function name before and after modification conforms. Check for lowercase.
-Step 4 - Output the complete code after refactoring based on the above steps.`;
-            break;
-
-        // === 原有的 Prompt ===
-        case SMELL_TYPES.COLLAPSIBLE_IF:
-            introText = `Collapsible if statements means that when two if statements are nested, we can improve the code's readability and reduce cognitive complexity by merging them.`;
-            stepsText = `Your task is to understand the content of the two lines of code and then reasonably merge the two lines of code into one line of conditional statement! 
-The judgment conditions should be presented in the order of the original two lines of code! 
-Remember to add appropriate conjunctions at the connection point (like "and", "or", etc.), and don't forget to add a colon at the end of the merged code!`;
-            break;
-
-        case SMELL_TYPES.COMMENTED_CODE:
-            introText = `Programmers should not comment out code as it bloats programs and reduces readability. So unused code should be deleted.`;
-            stepsText = `The following code contains useless commented out code(excluding text comments), we need to formally delete them by replacing them with three spaces if the line that is commented out is a code line.
-Specifically, if a given line of code contains a print statement or an assignment statement containing an equal sign, then that line of code must be replaced with three spaces!`;
-            break;
-
-        case SMELL_TYPES.DEAD_CODE:
-            introText = `Jump statements (return, break, continue, and raise) move control flow out of the current code block. Any statements that come after a jump are dead code.`;
-            stepsText = `The following code contains dead code, we need to delete them.`;
-            break;
-
-        case SMELL_TYPES.EMPTY_NESTED:
-            introText = `Empty nested code blocks means nested code blocks that do not contain other statements except pass statements.`;
-            stepsText = `Step 1 - Identify all empty nested code blocks in the code, giving priority to the block containing "pass". 
-Step 2 - Analyze the context and choose to delete or complete detected empty code blocks. If there is enough context support to complete the empty code block, complete this code block with the correct code and use it to replace the original "pass"; otherwise, delete the entire empty code block.
-Step 3 - Recheck whether there are still empty nested code blocks.
-Step 4 - Output the refactored code based on the above steps.`;
-            break;
-
-        case SMELL_TYPES.HIGH_COMPLEXITY:
-            introText = `Cognitive complexity measures how readable your code is. High cognitive complexity (>15) means the code is hard to read.`;
-            stepsText = `Step 1 - Calculate the cognitive complexity of the original code. 
-Step 2 - If > 15, split complex conditional expressions; reduce conditional branches; extract repeated code; encapsulate complex algorithms.
-Step 3 - Recheck complexity.
-Step 4 - Output the refactored code.`;
-            break;
-
-        case SMELL_TYPES.IDENTICAL_EXPR:
-            introText = `Using the identical expressions on either side of a binary operator is almost always a mistake.`;
-            stepsText = `Step 1 - Identify whether the same expression is used on both sides of a binary operator.
-Step 2 - If "and"/"or" has identical expressions, delete the operator and the expression after it. If "==","!=","<=",">=", correct the expression. Arithmetic operators need not be processed.
-Step 3 - Recheck.
-Step 4 - Output the refactored code.`;
-            break;
-
+        // ==========================================
+        // 2. Long Parameter List
+        // ==========================================
         case SMELL_TYPES.LONG_PARAM:
-            introText = `Functions, methods and lambdas should not have too many parameters. If > 7 parameters, we consider it a long method.`;
-            stepsText = `Step 1 - Check number of parameters. If > 7, go to step 2.
-Step 2 - Code refactoring by extracting functions. Reduce complexity.
-Step 3 - Recheck parameters count.
-Step 4 - Output the refactored code.`;
+            introText = `Function has too many parameters (>7).`;
+            promptInstructions = `1. Check function signature at **Line ${relativeLine}**.
+2. Strategy: Group parameters into a dictionary (e.g. **kwargs) or object IF it improves readability.
+3. If grouping is unsafe/unclear, simplify formatting only.`;
             break;
 
-        case SMELL_TYPES.RETURN_YIELD:
-            introText = `Functions that use yield are known as "generators", and generators cannot return values.`;
-            stepsText = `Step 1 - Detect whether "return" and "yield" appear in the same function.
-Step 2 - Refactor the generator to return a complete sequence, or refactor return into yield, ensuring only one is used.
-Step 3 - Recheck.
-Step 4 - Output the refactored code.`;
+        // ==========================================
+        // 3. Empty Nested Code Blocks (Problem 3 Fix)
+        // ==========================================
+        case SMELL_TYPES.EMPTY_NESTED:
+            introText = `Empty block or 'pass' detected.`;
+            promptInstructions = `1. Locate 'pass' at **Line ${relativeLine}**.
+2. **Fix**:
+   - 'if A: pass; else: B' -> 'if not A: B'.
+   - Standalone 'if A: pass' -> Remove if A has no side effects.
+   - In loop -> Use 'continue'?
+3. **PROHIBITION**: Do NOT replace 'pass' with 'return'. Keep 'pass' if removal breaks syntax.`;
             break;
 
+        // ==========================================
+        // 4. Collapsible if Statements (Problem 4 Ultimate Fix)
+        // ==========================================
+        case SMELL_TYPES.COLLAPSIBLE_IF:
+            introText = `Merge nested 'if' statements.`;
+            promptInstructions = `You must perform a strictly mechanical merge based on the code content.
+
+1. **LOCATE TARGET (Inner IF)**: 
+   - Find the line at **Line ${relativeLine}**.
+   - **VERIFY**: The code MUST MATCH: "${targetLineText}".
+   - This line is your [Inner IF].
+
+2. **LOCATE PARENT (Outer IF)**: 
+   - Identify the 'if' statement strictly immediately above [Inner IF] (ignoring blank lines/comments). This is [Outer IF].
+
+3. **SAFETY CHECK**: 
+   - Are there any executable statements (assignments, prints, etc.) BETWEEN [Outer IF] and [Inner IF]?
+   - **YES**: STOP. Output original code unchanged.
+   - **NO**: Proceed.
+
+4. **MERGE ACTION**:
+   - Condition: "if (Outer_Condition) and (Inner_Condition):"
+   - **Indent Fix**: Delete [Inner IF] line. Un-indent the body of [Inner IF] so it sits directly inside the new merged IF.
+
+Example:
+  Input:
+    if A:          <-- Outer
+        if B:      <-- Inner ("${targetLineText}")
+            do()
+  Output:
+    if (A) and (B):
+        do()`;
+            break;
+
+        // ==========================================
+        // 5. Commented Code
+        // ==========================================
+        case SMELL_TYPES.COMMENTED_CODE:
+            introText = `Commented-out code detected.`;
+            promptInstructions = `1. Check comments near **Line ${relativeLine}**.
+2. If it is code (e.g. '# x=1'), DELETE it.
+3. If it is text documentation, KEEP it.`;
+            break;
+
+        // ==========================================
+        // 6. Self-assigned Variables
+        // ==========================================
         case SMELL_TYPES.SELF_ASSIGN:
-            introText = `There is no reason to re-assign a variable to itself.`;
-            stepsText = `Step 1 - Identify self-assignment.
-Step 2 - Formally delete the meaningless self-assignment lines by replacing them with three spaces. If a block becomes empty, verify and remove appropriately.
-Step 3 - Recheck.
-Step 4 - Output the refactored code.`;
+            introText = `Redundant self-assignment (x = x).`;
+            promptInstructions = `1. Locate assignment at **Line ${relativeLine}**.
+2. DELETE the redundant line.
+3. Handle empty blocks if necessary (remove else, or add pass).`;
+            break;
+
+        // ==========================================
+        // 7. Identical Expressions (Problem 7 Fix)
+        // ==========================================
+        case SMELL_TYPES.IDENTICAL_EXPR:
+            introText = `Identical expression detected (e.g. a == a).`;
+            promptInstructions = `1. Locate expression at **Line ${relativeLine}**.
+2. **STRICT PROHIBITION**: 
+   - **NEVER** replace with 'True' or 'False'.
+   - **NEVER** delete the check.
+
+3. **STRATEGY**:
+   - Infer intent: Is there a variable with a similar name? (e.g. 'a == b') -> Fix typo.
+   - **If Ambiguous**: Do NOT change logic. Output original code and append comment: "# FIXME: Identical expression".`;
+            break;
+
+        // ==========================================
+        // 8. Dead Code
+        // ==========================================
+        case SMELL_TYPES.DEAD_CODE:
+            introText = `Unreachable code after jump statement.`;
+            promptInstructions = `1. Locate jump (return/break/raise) near **Line ${relativeLine}**.
+2. DELETE code physically following it in the same block.`;
+            break;
+
+        // ==========================================
+        // 9. Return and Yield
+        // ==========================================
+        case SMELL_TYPES.RETURN_YIELD:
+            introText = `Function mixes 'return' (with value) and 'yield'.`;
+            promptInstructions = `1. Analyze function intent.
+2. If Generator: Ensure 'return' has no value (just 'return').
+3. If Delegation: Use 'yield from'.`;
+            break;
+
+        // ==========================================
+        // 10. High Cognitive Complexity
+        // ==========================================
+        case SMELL_TYPES.HIGH_COMPLEXITY:
+            introText = `Code is too complex (deep nesting).`;
+            promptInstructions = `1. Analyze logic at **Line ${relativeLine}**.
+2. Simplify:
+   - Extract inner logic to sibling helper function (start with '_').
+   - Use early returns to reduce nesting.
+3. Constraint: Do NOT nest new functions inside original.`;
             break;
 
         default:
-            introText = "Refactor the code to remove the code smell.";
-            stepsText = "Refactor the code while preserving functionality.";
+            introText = `Refactor to remove '${smellType}'.`;
+            promptInstructions = `Fix the issue at **Line ${relativeLine}**. Keep logic strictly unchanged.`;
+            break;
     }
 
+    // === 3. Assemble Final Prompt ===
     return `${systemPrompt}
 
 Context:
 ${introText}
 
-To solve the problem do the following:
-${stepsText}
+${contextInfo}
 
-Please refactor the following code without using any additional quotes or triple quotes. Do not generate any explanation text nearby. No other symbols, comments, etc!!!
-\`\`\`
-${codeSnippet}
+Action Steps:
+${promptInstructions}
+
+Code to Refactor:
+\`\`\`python
+${codeToPrompt}
 \`\`\``;
 }
