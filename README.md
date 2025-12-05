@@ -30,7 +30,7 @@ It leverages Large Language Models (LLM) to automatically refactor the **Top-10*
 1.  **Install SonarLint**: This extension requires the [SonarLint](https://marketplace.visualstudio.com/items?itemName=SonarSource.sonarlint-vscode) extension to be installed and active.
     * *Note: SonarLint requires a Java Runtime Environment (JRE 17+) to run.*
 2.  **Install SMELLCC**:
-    * Download the latest `vscode-smellcc-0.0.2.vsix` file from our [GitHub Releases](#).
+    * Download the latest `vscode-smellcc-0.0.3.vsix` file from our [GitHub Releases](#).
     * In VS Code, go to the **Extensions** view (`Ctrl+Shift+X`).
     * Click the **"..."** menu (top-right) -> **"Install from VSIX..."**.
     * Select the downloaded file.
