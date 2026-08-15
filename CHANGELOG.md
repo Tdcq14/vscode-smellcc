@@ -4,6 +4,12 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.8]
+
+### Fixed
+
+- Closed the remaining ghost-diagnostic window: after Apply, the refactored document is suppressed from mirror sync until Sonar actually emits its post-re-analysis diagnostics event (8 s fallback). A save immediately after Apply can no longer re-attach Sonar's stale pre-edit diagnostics to the shifted lines.
+
 ## [0.0.7]
 
 ### Fixed

@@ -22,26 +22,31 @@ export function activate(context: vscode.ExtensionContext) {
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
     context.subscriptions.push(diagnosticCollection);
 
+    // Apply 之后 Sonar 重扫完成前，抑制该文件的镜像同步，
+    // 避免把“改之前的旧诊断”重新挂到行号已变化的代码上。
+    const suppressedUris = new Set<string>();
+
     const syncDiagnostics = (document?: vscode.TextDocument) => {
         const targets = document ? [document] : vscode.workspace.textDocuments;
         for (const doc of targets) {
-            if (doc.languageId === 'python') {
+            if (doc.languageId === 'python' && !suppressedUris.has(doc.uri.toString())) {
                 mirrorSonarDiagnostics(doc, diagnosticCollection);
             }
         }
     };
 
-    // Apply 之后旧镜像诊断不可信：先清掉，等 Sonar 异步重扫完再同步回来
+    // Apply 之后旧镜像诊断不可信：先清掉，等 Sonar 异步重扫完（诊断变化事件）再同步回来
     const clearAndResyncDiagnostics = (uri: vscode.Uri) => {
         diagnosticCollection.delete(uri);
-        for (const delay of [800, 2500]) {
-            setTimeout(() => {
-                const doc = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString());
-                if (doc) {
-                    syncDiagnostics(doc);
-                }
-            }, delay);
-        }
+        suppressedUris.add(uri.toString());
+        // 兜底：Sonar 8 秒内都没发出诊断变化事件，就解除抑制重新同步
+        setTimeout(() => {
+            suppressedUris.delete(uri.toString());
+            const doc = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString());
+            if (doc) {
+                syncDiagnostics(doc);
+            }
+        }, 8000);
     };
 
     const historyProvider = new RefactorHistoryProvider(context);
@@ -50,6 +55,8 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.languages.onDidChangeDiagnostics(event => {
             for (const uri of event.uris) {
+                // Sonar 对这个文件重新分析完成 → 解除抑制，允许同步新诊断
+                suppressedUris.delete(uri.toString());
                 const changedDoc = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
                 if (changedDoc) {
                     syncDiagnostics(changedDoc);
