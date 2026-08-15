@@ -1,21 +1,24 @@
 {
   "name": "vscode-smellcc",
-  "displayName": "vscode-smellcc",
+  "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",
     "url": "https://github.com/Tdcq14/vscode-smellcc.git"
-  }, 
+  },
   "engines": {
     "vscode": "^1.106.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onLanguage:python"],
-  
-  "main": "./dist/extension.js", 
-  
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onView:smellcc.refactorHistory"
+  ],
+  "main": "./dist/extension.js",
   "dependencies": {
     "node-fetch": "^2.7.0"
   },
@@ -27,25 +30,89 @@
       {
         "command": "smellcc.refactor",
         "title": "SMELLCC: Refactor Code Smell"
+      },
+      {
+        "command": "smellcc.undoLastRefactor",
+        "title": "SMELLCC: Undo Last Refactor"
+      },
+      {
+        "command": "smellcc.clearHistory",
+        "title": "SMELLCC: Clear Refactor History",
+        "icon": "$(clear-all)"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "smellcc.refactorHistory",
+          "name": "SMELLCC Refactor History",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "smellcc.refactorHistory",
+        "contents": "No SMELLCC refactors in this session yet.\nRun a SMELLCC quick fix to review a proposal."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "smellcc.clearHistory",
+          "when": "view == smellcc.refactorHistory",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "SMELLCC Configuration",
       "properties": {
         "smellcc.apiKey": {
-            "type": "string",
-            "default": "",
-            "description": "LLM API Key"
+          "type": "string",
+          "default": "",
+          "description": "LLM API Key"
         },
         "smellcc.apiBaseUrl": {
-            "type": "string",
-            "default": "https://api.deepseek.com",
-            "description": "API Base URL"
+          "type": "string",
+          "default": "https://api.deepseek.com",
+          "description": "API Base URL"
         },
         "smellcc.model": {
-            "type": "string",
-            "default": "deepseek-coder",
-            "description": "Model Name"
+          "type": "string",
+          "default": "deepseek-chat",
+          "description": "Model Name (DeepSeek: deepseek-chat or deepseek-reasoner)"
+        },
+        "smellcc.autoSaveAfterApply": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically save the source file after an explicitly reviewed SMELLCC refactor is applied."
+        },
+        "smellcc.validateAfterApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "After Apply, wait for Sonar diagnostics to refresh and verify that the target smell rule decreased in the modified scope."
+        },
+        "smellcc.validationTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 30000,
+          "description": "Maximum time to wait for Sonar diagnostics to refresh after a refactor is applied."
+        },
+        "smellcc.maxOutputTokens": {
+          "type": "number",
+          "default": 4096,
+          "minimum": 256,
+          "maximum": 32768,
+          "description": "Maximum output tokens requested from the configured LLM provider. Truncated responses are rejected instead of being applied."
+        },
+        "smellcc.requestTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Timeout for a single LLM refactoring request in milliseconds."
         }
       }
     }
@@ -54,13 +121,18 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "lint": "eslint src",
+    "test": "npm run compile && mocha \"dist/test/unit/*.test.js\"",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.10.1",
     "@types/vscode": "^1.106.1",
+    "eslint": "^9.30.0",
+    "mocha": "^11.7.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.35.0",
     "vsce": "^2.15.0"
   }
 }

@@ -1,24 +1,27 @@
 // src/extension.ts
 import * as vscode from 'vscode';
-import { mirrorSonarDiagnostics, mapRuleToPromptType } from './detector';
+import { mirrorSonarDiagnostics, mapRuleToPromptType, SMELL_TYPES } from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
 import { callLLMApi } from './llmClient';
+import { RefactorHistoryProvider } from './refactorHistory';
+import { RefactorPreviewManager } from './refactorPreview';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('SMELLCC Activated!');
 
-    // 1. 依赖检查: 确保安装了 SonarLint
     const sonarExt = vscode.extensions.getExtension('SonarSource.sonarlint-vscode');
     if (!sonarExt) {
         vscode.window.showWarningMessage('SMELLCC needs "SonarLint" extension.', 'Install').then(sel => {
-            if (sel === 'Install') vscode.env.openExternal(vscode.Uri.parse('vscode:extension/SonarSource.sonarlint-vscode'));
+            if (sel === 'Install') {vscode.env.openExternal(vscode.Uri.parse('vscode:extension/SonarSource.sonarlint-vscode'));}
         });
     }
 
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
     context.subscriptions.push(diagnosticCollection);
 
-    // 2. 监听诊断变化: 镜像 Sonar 的诊断信息
+    const historyProvider = new RefactorHistoryProvider(context);
+    const previewManager = new RefactorPreviewManager(context, historyProvider);
+
     const handleDiagnosticsChange = () => {
         if (vscode.window.activeTextEditor) {
             mirrorSonarDiagnostics(vscode.window.activeTextEditor.document, diagnosticCollection);
@@ -31,94 +34,158 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidSaveTextDocument(handleDiagnosticsChange)
     );
 
-    // 3. 注册修复提供者 (Code Action)
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new SmellCCActionProvider(), {
             providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
         })
     );
 
-    // 4. 注册重构命令 (核心逻辑修复)
     context.subscriptions.push(
         vscode.commands.registerCommand('smellcc.refactor', async (document: vscode.TextDocument, range: vscode.Range, ruleId: string, message: string) => {
-            
-            // A. 扩充上下文: 获取包含当前函数的完整代码块
-            const expandedRange = expandRangeToFunction(document, range);
+            const expandedRange = await expandRangeToFunction(document, range);
             const smellyCode = document.getText(expandedRange);
-
-            // B. 计算相对行号: Sonar 报错行 相对于 扩充后代码块起始行 的偏移量 (从 1 开始)
             const relativeLine = range.start.line - expandedRange.start.line + 1;
-
-            // [CRITICAL FIX] C. 获取报错行的具体代码内容
-            // 这是一把“锁”，告诉 LLM “不要随便找个 if 就合并，必须是内容为 xxx 的这一行”
             const targetLineText = document.lineAt(range.start.line).text.trim();
-
-            // D. 将规则 ID (如 python:S1066) 转换为可读 Prompt 类型
             const smellType = mapRuleToPromptType(ruleId);
 
             console.log(`[SMELLCC] Rule: ${smellType}, RelLine: ${relativeLine}, Target: "${targetLineText}"`);
 
-            // E. 生成 Prompt: 传入 targetLineText 作为第 5 个参数
+            const externalReferenceCount = await countExternalReferences(document, range, expandedRange, smellType);
             const prompt = buildSmellCCPrompt(smellType, smellyCode, message, relativeLine, targetLineText);
 
-            // F. 调用 LLM 并应用编辑
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: `SMELLCC: Fixing ${smellType}...`,
-                cancellable: false
-            }, async () => {
-                try {
-                    const newCode = await callLLMApi(prompt, smellyCode);
-                    
-                    const edit = new vscode.WorkspaceEdit();
-                    edit.replace(document.uri, expandedRange, newCode);
-                    
-                    const success = await vscode.workspace.applyEdit(edit);
-                    
-                    if (success) {
-                        vscode.window.showInformationMessage(`SMELLCC: Refactoring for ${smellType} Applied!`);
-                        await document.save();
-                    } else {
-                        vscode.window.showErrorMessage('SMELLCC: Failed to apply edit.');
-                    }
-                } catch (err: any) {
-                    vscode.window.showErrorMessage(`SMELLCC Error: ${err.message}`);
-                    console.error(err);
-                }
-            });
+            try {
+                const newCode = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `SMELLCC: Generating ${smellType} refactor...`,
+                    cancellable: false
+                }, () => callLLMApi(prompt, smellyCode));
+
+                await previewManager.previewAndApply(document, expandedRange, newCode, {
+                    smellType,
+                    ruleId,
+                    externalReferenceCount
+                });
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`SMELLCC Error: ${err.message}`);
+                console.error(err);
+            }
         })
     );
 }
 
-// 辅助函数：尝试将选择范围扩充到所在的完整函数定义
-function expandRangeToFunction(document: vscode.TextDocument, originalRange: vscode.Range): vscode.Range {
-    let startLine = originalRange.start.line;
-    let endLine = originalRange.end.line;
+async function countExternalReferences(
+    document: vscode.TextDocument,
+    diagnosticRange: vscode.Range,
+    previewScope: vscode.Range,
+    smellType: string
+): Promise<number> {
+    const workspaceImpactSmells = new Set<string>([
+        SMELL_TYPES.NAMING_CLASS,
+        SMELL_TYPES.NAMING_FUNC,
+        SMELL_TYPES.NAMING_METHOD,
+        SMELL_TYPES.NAMING_FIELD,
+        SMELL_TYPES.LONG_PARAM
+    ]);
 
-    // 1. 向上查找函数定义 (def)
+    if (!workspaceImpactSmells.has(smellType)) {
+        return 0;
+    }
+
+    try {
+        const references = await vscode.commands.executeCommand<vscode.Location[]>(
+            'vscode.executeReferenceProvider',
+            document.uri,
+            diagnosticRange.start
+        );
+
+        if (!references) {
+            return 0;
+        }
+
+        return references.filter(location => {
+            const sameDocument = location.uri.toString() === document.uri.toString();
+            return !sameDocument || !containsRange(previewScope, location.range);
+        }).length;
+    } catch (err) {
+        console.warn('[SMELLCC] Reference lookup failed; continuing without workspace impact data.', err);
+        return 0;
+    }
+}
+
+async function expandRangeToFunction(document: vscode.TextDocument, originalRange: vscode.Range): Promise<vscode.Range> {
+    try {
+        const symbols = await vscode.commands.executeCommand<Array<vscode.DocumentSymbol | vscode.SymbolInformation>>(
+            'vscode.executeDocumentSymbolProvider',
+            document.uri
+        );
+
+        const candidates: vscode.Range[] = [];
+        collectContainingFunctionRanges(symbols ?? [], originalRange, candidates);
+
+        if (candidates.length > 0) {
+            candidates.sort((a, b) => rangeSize(a) - rangeSize(b));
+            return candidates[0];
+        }
+    } catch (err) {
+        console.warn('[SMELLCC] Document symbol lookup failed; falling back to indentation scan.', err);
+    }
+
+    return expandRangeByIndentation(document, originalRange);
+}
+
+function collectContainingFunctionRanges(
+    symbols: readonly (vscode.DocumentSymbol | vscode.SymbolInformation)[],
+    targetRange: vscode.Range,
+    output: vscode.Range[]
+): void {
+    for (const symbol of symbols) {
+        const symbolRange = 'location' in symbol ? symbol.location.range : symbol.range;
+        if (
+            (symbol.kind === vscode.SymbolKind.Function || symbol.kind === vscode.SymbolKind.Method) &&
+            containsRange(symbolRange, targetRange)
+        ) {
+            output.push(symbolRange);
+        }
+        if ('children' in symbol) {
+            collectContainingFunctionRanges(symbol.children, targetRange, output);
+        }
+    }
+}
+
+function containsRange(outer: vscode.Range, inner: vscode.Range): boolean {
+    return outer.start.isBeforeOrEqual(inner.start) && outer.end.isAfterOrEqual(inner.end);
+}
+
+function rangeSize(range: vscode.Range): number {
+    const lineSpan = range.end.line - range.start.line;
+    return lineSpan * 1_000_000 + (range.end.character - range.start.character);
+}
+
+function expandRangeByIndentation(document: vscode.TextDocument, originalRange: vscode.Range): vscode.Range {
+    const startLine = originalRange.start.line;
+    const endLine = originalRange.end.line;
     let foundDef = false;
     let defLineIndex = startLine;
+
     for (let i = startLine; i >= Math.max(0, startLine - 100); i--) {
         const lineText = document.lineAt(i).text;
-        if (/^\s*def\s+/.test(lineText)) {
+        if (/^\s*(async\s+)?def\s+/.test(lineText)) {
             defLineIndex = i;
             foundDef = true;
             break;
         }
     }
 
-    if (!foundDef) return document.lineAt(startLine).range;
+    if (!foundDef) {return document.lineAt(startLine).range;}
 
-    // 2. 确定函数缩进级别
     const defLine = document.lineAt(defLineIndex);
     const defIndent = defLine.firstNonWhitespaceCharacterIndex;
     let finalLineIndex = endLine;
-    
-    // 3. 向下查找函数结束 (通过缩进判断)
+
     for (let i = defLineIndex + 1; i < document.lineCount; i++) {
         const line = document.lineAt(i);
-        if (line.isEmptyOrWhitespace) continue;
-        
+        if (line.isEmptyOrWhitespace) {continue;}
+
         if (line.firstNonWhitespaceCharacterIndex <= defIndent) {
             finalLineIndex = i - 1;
             break;
@@ -136,7 +203,7 @@ function expandRangeToFunction(document: vscode.TextDocument, originalRange: vsc
 class SmellCCActionProvider implements vscode.CodeActionProvider {
     provideCodeActions(document: vscode.TextDocument, range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
         const actions: vscode.CodeAction[] = [];
-        
+
         for (const diag of context.diagnostics) {
             if (diag.source === 'SMELLCC') {
                 const ruleId = String(diag.code);

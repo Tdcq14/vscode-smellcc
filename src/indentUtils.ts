@@ -11,7 +11,7 @@ export function getMinIndentation(code: string): number {
 
     for (const line of lines) {
         // 跳过空行
-        if (line.trim().length === 0) continue;
+        if (line.trim().length === 0) {continue;}
         
         // 匹配行首空白
         const match = line.match(/^(\s*)/);
@@ -33,12 +33,12 @@ export function getMinIndentation(code: string): number {
  * 让代码块左对齐
  */
 export function deIndent(code: string, indentSize: number): string {
-    if (indentSize === 0) return code;
+    if (indentSize === 0) {return code;}
     
     const lines = code.split('\n');
     return lines.map(line => {
         // 如果是空行，保持原样（或者清空空白字符）
-        if (line.trim().length === 0) return '';
+        if (line.trim().length === 0) {return '';}
         
         // 移除前缀的 indentSize 个字符
         // 防御性编程：如果某行缩进小于 indentSize（理论上不应发生），则trimLeft
@@ -54,13 +54,13 @@ export function deIndent(code: string, indentSize: number): string {
  * 恢复代码块的上下文层级
  */
 export function reIndent(code: string, indentSize: number): string {
-    if (indentSize === 0) return code;
+    if (indentSize === 0) {return code;}
     const indentString = ' '.repeat(indentSize);
     
     const lines = code.split('\n');
     return lines.map(line => {
         // 空行不加缩进，保持干净
-        if (line.trim().length === 0) return '';
+        if (line.trim().length === 0) {return '';}
         return indentString + line;
     }).join('\n');
 }
