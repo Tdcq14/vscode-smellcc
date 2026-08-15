@@ -79,17 +79,17 @@ class HistoryTreeItem extends vscode.TreeItem {
 }
 
 function decisionLabel(decision: HistoryDecision): string {
-    if (decision === 'applied') return 'applied';
-    if (decision === 'undone') return 'undone';
+    if (decision === 'applied') {return 'applied';}
+    if (decision === 'undone') {return 'undone';}
     return 'rejected';
 }
 
 function iconFor(entry: RefactorHistoryEntry): string {
-    if (entry.decision === 'rejected') return 'circle-slash';
-    if (entry.decision === 'undone') return 'discard';
-    if (entry.validation?.status === 'failed') return 'error';
-    if (entry.validation?.status === 'passed') return 'pass-filled';
-    if (entry.risk.level === 'high') return 'warning';
+    if (entry.decision === 'rejected') {return 'circle-slash';}
+    if (entry.decision === 'undone') {return 'discard';}
+    if (entry.validation?.status === 'failed') {return 'error';}
+    if (entry.validation?.status === 'passed') {return 'pass-filled';}
+    if (entry.risk.level === 'high') {return 'warning';}
     return 'check';
 }
 

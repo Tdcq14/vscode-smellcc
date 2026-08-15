@@ -12,7 +12,10 @@
     "vscode": "^1.106.0"
   },
   "categories": ["Other"],
-  "activationEvents": ["onLanguage:python"],
+  "activationEvents": [
+    "onLanguage:python",
+    "onView:smellcc.refactorHistory"
+  ],
   "main": "./dist/extension.js",
   "dependencies": {
     "node-fetch": "^2.7.0"
@@ -75,8 +78,8 @@
         },
         "smellcc.model": {
           "type": "string",
-          "default": "deepseek-coder",
-          "description": "Model Name"
+          "default": "deepseek-chat",
+          "description": "Model Name (DeepSeek: deepseek-chat or deepseek-reasoner)"
         },
         "smellcc.autoSaveAfterApply": {
           "type": "boolean",
@@ -116,13 +119,18 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "lint": "eslint src",
+    "test": "npm run compile && mocha \"dist/test/unit/*.test.js\"",
     "package": "vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.10.1",
     "@types/vscode": "^1.106.1",
+    "eslint": "^9.30.0",
+    "mocha": "^11.7.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.35.0",
     "vsce": "^2.15.0"
   }
 }

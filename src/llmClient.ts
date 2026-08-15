@@ -20,7 +20,7 @@ interface ChatCompletionResponse {
 export async function callLLMApi(prompt: string, originalCode: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('smellcc');
     const apiKey = config.get<string>('apiKey');
-    const modelName = config.get<string>('model') || 'deepseek-coder';
+    const modelName = config.get<string>('model') || 'deepseek-chat';
     const maxOutputTokens = config.get<number>('maxOutputTokens', 4096);
     const requestTimeoutMs = config.get<number>('requestTimeoutMs', 60000);
 
@@ -28,7 +28,7 @@ export async function callLLMApi(prompt: string, originalCode: string): Promise<
     baseUrl = baseUrl.replace(/\/+$/, '');
     const apiUrl = baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
 
-    if (!apiKey) throw new Error('API Key missing');
+    if (!apiKey) {throw new Error('API Key missing');}
 
     const targetIndent = getMinIndentation(originalCode);
     const payload = {

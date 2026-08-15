@@ -110,7 +110,7 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 2. Search for **`smellcc`**.
 3. **Required**: Enter your API key in `Smellcc: Api Key`.
 4. **Optional**: Configure `Smellcc: Api Base Url`.
-5. **Optional**: Change `Smellcc: Model` (default: `deepseek-coder`).
+5. **Optional**: Change `Smellcc: Model` (default: `deepseek-chat`).
 6. **Optional**: Enable `Smellcc: Auto Save After Apply` to save an explicitly accepted edit immediately.
 7. **Optional**: Disable `Smellcc: Validate After Apply` if you do not want SMELLCC to wait for Sonar post-validation.
 8. **Optional**: Adjust `Smellcc: Validation Timeout Ms` (default: 5000 ms).
@@ -140,6 +140,15 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 * **Java Runtime (JRE)**: Version 17 or higher (required by SonarLint).
 * **Python interpreter**: Recommended for the pre-apply syntax gate. If unavailable, review can continue but syntax validation is marked unavailable.
 * **Internet Connection**: Required to access the configured LLM API.
+
+## 🛠️ Development
+
+1. `npm install`
+2. `npm run compile` — build `dist/` with TypeScript.
+3. `npm test` — pure-logic unit tests (change-risk guard, indentation utilities).
+4. `npm run lint` — ESLint over `src/`.
+5. `npm run package` — produce the installable `.vsix`.
+6. Press **F5** to launch the Extension Development Host. Set `Smellcc: Api Key` there, open a Python file with a supported SonarLint smell, and use the lightbulb quick fix.
 
 ## 🔗 References
 

@@ -114,7 +114,7 @@ export function getSmellTypeFromDiagnostic(diagnostic: vscode.Diagnostic): strin
         ruleId = String(diagnostic.code.value);
     }
     const basicType = RULE_MAPPINGS[ruleId];
-    if (!basicType) return undefined;
+    if (!basicType) {return undefined;}
     
     return mapRuleToPromptType(ruleId);
 }

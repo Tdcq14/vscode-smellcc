@@ -9,3 +9,8 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+dist/test/**
+
+# local npm cache used for sandboxed installs
+.npm-cache/

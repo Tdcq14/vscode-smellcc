@@ -145,7 +145,6 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             const reasons = risk.reasons.length > 0 ? ` ${risk.reasons.join('; ')}.` : '';
             return vscode.window.showWarningMessage(
                 `SMELLCC generated a high-risk ${smellType} proposal (${changeSummary}).${reasons} Review the diff carefully.`,
-                { modal: true },
                 'Apply High-Risk Refactor',
                 'Reject'
             );
@@ -233,7 +232,6 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
         } else if (validation.status === 'failed') {
             const choice = await vscode.window.showWarningMessage(
                 `SMELLCC: Refactor was applied, but validation failed: ${validation.detail}`,
-                { modal: true },
                 'Undo SMELLCC Refactor',
                 'Keep Anyway'
             );

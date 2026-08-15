@@ -6,3 +6,5 @@ node_modules
 CLAUDE.md
 IMPROVEMENTS.md
 IMPROVEMENTS_V2.md
+# local npm cache used for sandboxed installs
+.npm-cache/

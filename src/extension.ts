@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
     const sonarExt = vscode.extensions.getExtension('SonarSource.sonarlint-vscode');
     if (!sonarExt) {
         vscode.window.showWarningMessage('SMELLCC needs "SonarLint" extension.', 'Install').then(sel => {
-            if (sel === 'Install') vscode.env.openExternal(vscode.Uri.parse('vscode:extension/SonarSource.sonarlint-vscode'));
+            if (sel === 'Install') {vscode.env.openExternal(vscode.Uri.parse('vscode:extension/SonarSource.sonarlint-vscode'));}
         });
     }
 
@@ -176,7 +176,7 @@ function expandRangeByIndentation(document: vscode.TextDocument, originalRange: 
         }
     }
 
-    if (!foundDef) return document.lineAt(startLine).range;
+    if (!foundDef) {return document.lineAt(startLine).range;}
 
     const defLine = document.lineAt(defLineIndex);
     const defIndent = defLine.firstNonWhitespaceCharacterIndex;
@@ -184,7 +184,7 @@ function expandRangeByIndentation(document: vscode.TextDocument, originalRange: 
 
     for (let i = defLineIndex + 1; i < document.lineCount; i++) {
         const line = document.lineAt(i);
-        if (line.isEmptyOrWhitespace) continue;
+        if (line.isEmptyOrWhitespace) {continue;}
 
         if (line.firstNonWhitespaceCharacterIndex <= defIndent) {
             finalLineIndex = i - 1;

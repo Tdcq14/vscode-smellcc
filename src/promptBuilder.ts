@@ -51,28 +51,28 @@ CRITICAL RULES:
             introText = `Irregular class name detected. Must match ^[A-Z_][a-zA-Z0-9]+$ (CamelCase).`;
             promptInstructions = `1. Identify the class at **Line ${relativeLine}**.
 2. Rename it to CamelCase (e.g., 'my_class' -> 'MyClass').
-3. Update ALL usages.`;
+3. Rename only usages VISIBLE in the code snippet below. Do NOT invent callers, imports or subclasses that are outside the snippet.`;
             break;
 
         case SMELL_TYPES.NAMING_FUNC: 
             introText = `Irregular function name detected. Must match ^[a-z_][a-z0-9_]{2,}$ (snake_case).`;
             promptInstructions = `1. Identify the function at **Line ${relativeLine}**.
 2. Rename it to snake_case (e.g., 'myFunc' -> 'my_func').
-3. Update ALL usages.`;
+3. Rename only usages VISIBLE in the code snippet below. Do NOT invent external callers.`;
             break;
 
         case SMELL_TYPES.NAMING_METHOD:
             introText = `Irregular method name detected. Must match ^[a-z_][a-z0-9_]{2,}$ (snake_case).`;
             promptInstructions = `1. Identify the method at **Line ${relativeLine}**.
 2. Rename it to snake_case.
-3. Update ALL usages.`;
+3. Rename only usages VISIBLE in the code snippet below. Do NOT invent external callers or subclasses.`;
             break;
 
         case SMELL_TYPES.NAMING_FIELD:
             introText = `Irregular field name detected. Must match ^[_a-z][_a-z0-9]*$ (snake_case).`;
             promptInstructions = `1. Identify the field (self.xxx) at **Line ${relativeLine}**.
 2. Rename it to snake_case.
-3. Update ALL usages.`;
+3. Rename only usages VISIBLE in the code snippet below. Do NOT invent external usages.`;
             break;
 
         // ==========================================
@@ -82,7 +82,8 @@ CRITICAL RULES:
             introText = `Function has too many parameters (>7).`;
             promptInstructions = `1. Check function signature at **Line ${relativeLine}**.
 2. Strategy: Group parameters into a dictionary (e.g. **kwargs) or object IF it improves readability.
-3. If grouping is unsafe/unclear, simplify formatting only.`;
+3. If grouping is unsafe/unclear, simplify formatting only.
+4. Changing the signature breaks callers OUTSIDE this snippet. Only rewrite call sites that are VISIBLE in the snippet; do NOT invent external ones.`;
             break;
 
         // ==========================================
