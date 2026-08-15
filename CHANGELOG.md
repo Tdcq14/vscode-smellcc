@@ -4,6 +4,12 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.2]
+
+### Changed
+
+- Removed the deprecated plaintext `smellcc.apiKey` setting from the Settings UI entirely. The API key now exists only in VS Code SecretStorage; there is no Api Key field in Settings anymore. Legacy plaintext values are still read once and migrated (then cleared).
+
 ## [0.1.1]
 
 ### Added

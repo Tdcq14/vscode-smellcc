@@ -2,7 +2,7 @@
   "name": "vscode-smellcc",
   "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",
@@ -94,11 +94,6 @@
     "configuration": {
       "title": "SMELLCC Configuration",
       "properties": {
-        "smellcc.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "Deprecated: API keys are now stored in VS Code SecretStorage. Run 'SMELLCC: Set API Key' instead. Existing plaintext values are migrated automatically."
-        },
         "smellcc.apiBaseUrl": {
           "type": "string",
           "default": "https://api.deepseek.com",
