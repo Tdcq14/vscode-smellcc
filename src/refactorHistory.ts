@@ -100,6 +100,9 @@ function buildTooltip(entry: RefactorHistoryEntry): vscode.MarkdownString {
     tooltip.appendMarkdown(`- Risk: ${entry.risk.level}\n`);
     tooltip.appendMarkdown(`- Changed lines: +${entry.risk.addedLines} / -${entry.risk.removedLines}\n`);
     tooltip.appendMarkdown(`- Syntax check: ${entry.syntax.status}\n`);
+    if (entry.risk.externalReferenceCount > 0) {
+        tooltip.appendMarkdown(`- References outside preview scope: ${entry.risk.externalReferenceCount}\n`);
+    }
     if (entry.validation) {
         tooltip.appendMarkdown(`- Sonar validation: ${entry.validation.status}\n`);
         tooltip.appendMarkdown(`- Rule count: ${entry.validation.beforeCount} → ${entry.validation.afterCount}\n`);

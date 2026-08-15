@@ -5,87 +5,120 @@ import { getMinIndentation, deIndent, reIndent } from './indentUtils';
 const fetch = require('node-fetch');
 
 interface ChatCompletionResponse {
-    choices: {
-        message: {
-            content: string;
+    choices?: {
+        message?: {
+            content?: string;
         };
+        finish_reason?: string | null;
     }[];
-    error?: any;
+    error?: {
+        message?: string;
+        type?: string;
+    } | any;
 }
 
 export async function callLLMApi(prompt: string, originalCode: string): Promise<string> {
     const config = vscode.workspace.getConfiguration('smellcc');
     const apiKey = config.get<string>('apiKey');
-    const modelName = config.get<string>('model') || "deepseek-coder";
-    
-    let baseUrl = config.get<string>('apiBaseUrl') || "https://api.deepseek.com";
-    baseUrl = baseUrl.replace(/\/+$/, '');
-    let apiUrl = baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+    const modelName = config.get<string>('model') || 'deepseek-coder';
+    const maxOutputTokens = config.get<number>('maxOutputTokens', 4096);
+    const requestTimeoutMs = config.get<number>('requestTimeoutMs', 60000);
 
-    if (!apiKey) throw new Error("API Key missing");
+    let baseUrl = config.get<string>('apiBaseUrl') || 'https://api.deepseek.com';
+    baseUrl = baseUrl.replace(/\/+$/, '');
+    const apiUrl = baseUrl.includes('/chat/completions') ? baseUrl : `${baseUrl}/chat/completions`;
+
+    if (!apiKey) throw new Error('API Key missing');
 
     const targetIndent = getMinIndentation(originalCode);
-
-    // Params: temperature=0 for deterministic output
     const payload = {
         model: modelName,
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.0, 
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.0,
         top_p: 0.1,
         stream: false,
-        max_tokens: 4096
+        max_tokens: maxOutputTokens
     };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Math.max(1000, requestTimeoutMs));
 
     try {
         const response = await fetch(apiUrl, {
-            method: "POST",
+            method: 'POST',
             headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: controller.signal
         });
 
-        if (!response.ok) throw new Error(`API Error ${response.status}`);
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            throw new Error(`API Error ${response.status}${errorText ? `: ${errorText.slice(0, 300)}` : ''}`);
+        }
+
         const data = await response.json() as ChatCompletionResponse;
-        
-        let content = data.choices[0].message.content;
+        if (data.error) {
+            throw new Error(data.error.message || 'LLM provider returned an error payload');
+        }
 
-        // 1. Clean Markdown
-        content = content.replace(/^```[a-zA-Z]*\s*/, '').replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+        const choice = data.choices?.[0];
+        if (!choice?.message?.content) {
+            throw new Error('LLM returned an empty completion');
+        }
+        if (choice.finish_reason === 'length') {
+            throw new Error('LLM output was truncated by the output-token limit; increase Smellcc: Max Output Tokens and retry');
+        }
 
-        // 2. Special Cleaning: Strip Class Wrapper
-        if (content.includes("class RefactoringContext:")) {
+        let content = extractCode(choice.message.content);
+        if (!content.trim()) {
+            throw new Error('LLM response did not contain usable Python code');
+        }
+
+        if (content.includes('class RefactoringContext:')) {
             const lines = content.split('\n');
-            const classLineIndex = lines.findIndex(l => l.includes("class RefactoringContext:"));
+            const classLineIndex = lines.findIndex(line => line.includes('class RefactoringContext:'));
             if (classLineIndex !== -1) {
-                // Take lines after class def
-                const bodyLines = lines.slice(classLineIndex + 1);
-                const bodyStr = bodyLines.join('\n');
-                
-                // Remove inner indentation (usually 4 spaces)
+                const bodyStr = lines.slice(classLineIndex + 1).join('\n');
                 const innerIndent = getMinIndentation(bodyStr);
                 content = deIndent(bodyStr, innerIndent > 0 ? innerIndent : 4);
             }
         }
 
-        // 3. Smart Re-indentation (Normalization Logic)
         const llmResultIndent = getMinIndentation(content);
         let finalCode = content;
 
         if (llmResultIndent === 0 && targetIndent > 0) {
-            // LLM returned 0-indexed code -> Add target indent
             finalCode = reIndent(content, targetIndent);
         } else if (llmResultIndent > 0) {
-            // LLM returned indented code -> Strip it then add target indent
             const flatCode = deIndent(content, llmResultIndent);
             finalCode = reIndent(flatCode, targetIndent);
         }
 
         return finalCode;
-
     } catch (error: any) {
-        console.error("[SMELLCC]", error);
+        console.error('[SMELLCC]', error);
+        if (error?.name === 'AbortError') {
+            throw new Error(`LLM request timed out after ${requestTimeoutMs} ms`);
+        }
         throw new Error(`LLM Failed: ${error.message}`);
+    } finally {
+        clearTimeout(timeout);
     }
+}
+
+function extractCode(rawContent: string): string {
+    const trimmed = rawContent.trim();
+    const fenced = trimmed.match(/```(?:python|py)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+        return fenced[1].trim();
+    }
+
+    return trimmed
+        .replace(/^```[a-zA-Z]*\s*/, '')
+        .replace(/^```\s*/, '')
+        .replace(/```\s*$/, '')
+        .trim();
 }

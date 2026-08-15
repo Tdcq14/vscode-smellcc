@@ -10,7 +10,8 @@ It leverages Large Language Models (LLM) to refactor the **Top-10** frequent cod
 * **🧭 Symbol-aware Scope Selection**: Prefers VS Code document symbols to locate the smallest enclosing function/method, with an indentation-based fallback.
 * **🤖 Smell-specific LLM Refactoring**: Builds a prompt from the smell type, exact diagnostic location, target line and enclosing code context.
 * **🔀 Review-before-Apply Diff**: Opens the complete before/after proposal in VS Code's native diff editor before the working file is modified.
-* **🛡️ Change Risk Guard**: Computes line-level edit statistics and flags unexpectedly broad changes, large deletions or suspicious signature edits before Apply.
+* **🛡️ Change Risk + Workspace Impact Guard**: Computes line-level edit statistics and, for symbol-level smells, checks references outside the preview scope before allowing a signature/name change to look low-risk.
+* **📦 Completion Integrity Guard**: Rejects empty or token-truncated LLM responses and extracts fenced code defensively before review.
 * **🐍 Pre-apply Syntax Gate**: Validates the proposed full Python document with `py_compile` when a Python interpreter is available; syntactically invalid proposals are blocked.
 * **✅ Post-apply Sonar Validation**: Watches refreshed Sonar diagnostics and checks whether the target rule decreased inside the modified scope.
 * **↩️ Guarded Undo**: Rolls back only when the AI-generated region has not been changed afterwards, protecting later developer edits.
@@ -73,7 +74,7 @@ Before Apply, SMELLCC compares the original and proposed scope with a line-level
 * deleting a large fraction of the original function;
 * turning a small quick fix into a very large edit.
 
-High-risk proposals are still inspectable in the native diff, but require a stronger explicit confirmation.
+For naming and long-parameter smells, SMELLCC also asks VS Code's reference provider for usages outside the preview scope. If the proposal changes a symbol/signature while external references exist, the proposal is escalated to high risk because a local edit may break callers. High-risk proposals are still inspectable in the native diff, but require a stronger explicit confirmation.
 
 ### Validation loop
 
@@ -113,6 +114,8 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 6. **Optional**: Enable `Smellcc: Auto Save After Apply` to save an explicitly accepted edit immediately.
 7. **Optional**: Disable `Smellcc: Validate After Apply` if you do not want SMELLCC to wait for Sonar post-validation.
 8. **Optional**: Adjust `Smellcc: Validation Timeout Ms` (default: 5000 ms).
+9. **Optional**: Increase `Smellcc: Max Output Tokens` for unusually large functions; responses that end with provider `finish_reason=length` are rejected.
+10. **Optional**: Adjust `Smellcc: Request Timeout Ms` for slower providers.
 
 ---
 

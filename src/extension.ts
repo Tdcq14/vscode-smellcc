@@ -1,6 +1,6 @@
 // src/extension.ts
 import * as vscode from 'vscode';
-import { mirrorSonarDiagnostics, mapRuleToPromptType } from './detector';
+import { mirrorSonarDiagnostics, mapRuleToPromptType, SMELL_TYPES } from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
 import { callLLMApi } from './llmClient';
 import { RefactorHistoryProvider } from './refactorHistory';
@@ -50,6 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             console.log(`[SMELLCC] Rule: ${smellType}, RelLine: ${relativeLine}, Target: "${targetLineText}"`);
 
+            const externalReferenceCount = await countExternalReferences(document, range, expandedRange, smellType);
             const prompt = buildSmellCCPrompt(smellType, smellyCode, message, relativeLine, targetLineText);
 
             try {
@@ -59,13 +60,56 @@ export function activate(context: vscode.ExtensionContext) {
                     cancellable: false
                 }, () => callLLMApi(prompt, smellyCode));
 
-                await previewManager.previewAndApply(document, expandedRange, newCode, { smellType, ruleId });
+                await previewManager.previewAndApply(document, expandedRange, newCode, {
+                    smellType,
+                    ruleId,
+                    externalReferenceCount
+                });
             } catch (err: any) {
                 vscode.window.showErrorMessage(`SMELLCC Error: ${err.message}`);
                 console.error(err);
             }
         })
     );
+}
+
+async function countExternalReferences(
+    document: vscode.TextDocument,
+    diagnosticRange: vscode.Range,
+    previewScope: vscode.Range,
+    smellType: string
+): Promise<number> {
+    const workspaceImpactSmells = new Set<string>([
+        SMELL_TYPES.NAMING_CLASS,
+        SMELL_TYPES.NAMING_FUNC,
+        SMELL_TYPES.NAMING_METHOD,
+        SMELL_TYPES.NAMING_FIELD,
+        SMELL_TYPES.LONG_PARAM
+    ]);
+
+    if (!workspaceImpactSmells.has(smellType)) {
+        return 0;
+    }
+
+    try {
+        const references = await vscode.commands.executeCommand<vscode.Location[]>(
+            'vscode.executeReferenceProvider',
+            document.uri,
+            diagnosticRange.start
+        );
+
+        if (!references) {
+            return 0;
+        }
+
+        return references.filter(location => {
+            const sameDocument = location.uri.toString() === document.uri.toString();
+            return !sameDocument || !containsRange(previewScope, location.range);
+        }).length;
+    } catch (err) {
+        console.warn('[SMELLCC] Reference lookup failed; continuing without workspace impact data.', err);
+        return 0;
+    }
 }
 
 async function expandRangeToFunction(document: vscode.TextDocument, originalRange: vscode.Range): Promise<vscode.Range> {

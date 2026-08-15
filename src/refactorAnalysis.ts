@@ -8,9 +8,10 @@ export type ChangeRisk = {
     editRatio: number;
     signatureChanged: boolean;
     reasons: string[];
+    externalReferenceCount: number;
 };
 
-export function analyzeChangeRisk(before: string, after: string, smellType: string): ChangeRisk {
+export function analyzeChangeRisk(before: string, after: string, smellType: string, externalReferenceCount: number = 0): ChangeRisk {
     const beforeLines = splitLines(before);
     const afterLines = splitLines(after);
     const lcs = longestCommonSubsequenceLength(beforeLines, afterLines);
@@ -33,6 +34,11 @@ export function analyzeChangeRisk(before: string, after: string, smellType: stri
     if (signatureChanged && !signatureChangeExpected) {
         score += 3;
         reasons.push('function signature changed outside a signature-oriented smell');
+    }
+
+    if (externalReferenceCount > 0 && (signatureChanged || smellType.startsWith('Naming -'))) {
+        score += 3;
+        reasons.push(`${externalReferenceCount} reference(s) exist outside the preview scope and may require coordinated edits`);
     }
 
     if (editRatio >= 0.55 && changedLines >= 12) {
@@ -65,7 +71,8 @@ export function analyzeChangeRisk(before: string, after: string, smellType: stri
         changedLines,
         editRatio,
         signatureChanged,
-        reasons
+        reasons,
+        externalReferenceCount
     };
 }
 

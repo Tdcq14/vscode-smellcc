@@ -13,6 +13,7 @@ import {
 type RefactorMetadata = {
     smellType: string;
     ruleId: string;
+    externalReferenceCount: number;
 };
 
 type PreviewSnapshot = {
@@ -70,7 +71,7 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             return false;
         }
 
-        const risk = analyzeChangeRisk(before, newCode, metadata.smellType);
+        const risk = analyzeChangeRisk(before, newCode, metadata.smellType, metadata.externalReferenceCount);
         const syntax = await validatePythonSyntax(proposedDocumentText);
         const historyId = this.nextHistoryId++;
         const sonarBaseline = captureSonarBaseline(document.uri, metadata.ruleId, range);

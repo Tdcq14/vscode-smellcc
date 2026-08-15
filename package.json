@@ -94,6 +94,20 @@
           "minimum": 500,
           "maximum": 30000,
           "description": "Maximum time to wait for Sonar diagnostics to refresh after a refactor is applied."
+        },
+        "smellcc.maxOutputTokens": {
+          "type": "number",
+          "default": 4096,
+          "minimum": 256,
+          "maximum": 32768,
+          "description": "Maximum output tokens requested from the configured LLM provider. Truncated responses are rejected instead of being applied."
+        },
+        "smellcc.requestTimeoutMs": {
+          "type": "number",
+          "default": 60000,
+          "minimum": 1000,
+          "maximum": 300000,
+          "description": "Timeout for a single LLM refactoring request in milliseconds."
         }
       }
     }
