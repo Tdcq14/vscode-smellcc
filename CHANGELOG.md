@@ -4,6 +4,17 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.9]
+
+### Changed
+
+- Removed the diagnostic mirror layer entirely: SMELLCC no longer creates its own `[SMELLCC]` diagnostics in the Problems panel. Quick fixes now attach directly to Sonar's own warnings, so only one set of diagnostics is displayed.
+- The CodeAction provider accepts any Sonar-sourced diagnostic (SonarQube for IDE / SonarLint / SonarQube) whose rule is in the supported mapping.
+
+### Fixed
+
+- Removes the entire stale-mirror bug class: ghost diagnostics after Apply, disappearing `[SMELLCC]` entries, and the sync/suppression timing issues are structurally impossible without the mirror.
+
 ## [0.0.8]
 
 ### Fixed

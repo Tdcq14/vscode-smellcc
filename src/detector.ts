@@ -67,74 +67,20 @@ export function mapRuleToPromptType(ruleId: string): string {
     }
 }
 
-// 4. 镜像诊断逻辑
-export function mirrorSonarDiagnostics(
-    document: vscode.TextDocument, 
-    collection: vscode.DiagnosticCollection
-): boolean {
-    const allDiagnostics = vscode.languages.getDiagnostics(document.uri);
-    const smellccDiagnostics: vscode.Diagnostic[] = [];
-
-    for (const diag of allDiagnostics) {
-        // 兼容 SonarLint / SonarQube / SonarQube for IDE 等多种 source 名称
-        if (diag.source && diag.source.toLowerCase().includes('sonar')) {
-            let ruleId = '';
-            if (typeof diag.code === 'object' && diag.code !== null) {
-                ruleId = String(diag.code.value);
-            } else if (diag.code) {
-                ruleId = String(diag.code);
-            }
-
-            const displayTitle = RULE_MAPPINGS[ruleId];
-
-            if (displayTitle) {
-                const newDiag = new vscode.Diagnostic(
-                    diag.range, 
-                    `[SMELLCC] ${displayTitle}: ${diag.message}`, 
-                    vscode.DiagnosticSeverity.Warning
-                );
-                newDiag.source = 'SMELLCC';
-                newDiag.code = ruleId;
-                smellccDiagnostics.push(newDiag);
-            }
-        }
+// 4. 从 Sonar 诊断中提取 rule id（兼容 string / { value } 两种形式）
+export function getRuleIdFromDiagnostic(diagnostic: vscode.Diagnostic): string {
+    if (typeof diagnostic.code === 'object' && diagnostic.code !== null) {
+        return String(diagnostic.code.value);
     }
-
-    // 内容去重：避免 set 触发 onDidChangeDiagnostics 后再镜像一遍自己
-    if (diagnosticsEqual(collection.get(document.uri) ?? [], smellccDiagnostics)) {
-        return false;
-    }
-    collection.set(document.uri, smellccDiagnostics);
-    return true;
+    return diagnostic.code ? String(diagnostic.code) : '';
 }
 
-function diagnosticsEqual(a: readonly vscode.Diagnostic[], b: readonly vscode.Diagnostic[]): boolean {
-    if (a.length !== b.length) {
-        return false;
-    }
-    return a.every((diag, index) => {
-        const other = b[index];
-        return diag.range.isEqual(other.range)
-            && diag.message === other.message
-            && diag.severity === other.severity
-            && diag.source === other.source
-            && String(diag.code) === String(other.code);
-    });
+/** 是否为 Sonar 系扩展（SonarLint / SonarQube / SonarQube for IDE）产生的诊断。 */
+export function isSonarDiagnostic(diagnostic: vscode.Diagnostic): boolean {
+    return Boolean(diagnostic.source && diagnostic.source.toLowerCase().includes('sonar'));
 }
 
-// 5. 辅助函数
-export function getSmellTypeFromDiagnostic(diagnostic: vscode.Diagnostic): string | undefined {
-    if (!diagnostic.source || !diagnostic.source.toLowerCase().includes('sonar')) {
-        return undefined;
-    }
-    let ruleId = '';
-    if (typeof diagnostic.code === 'string') {
-        ruleId = diagnostic.code;
-    } else if (diagnostic.code && typeof diagnostic.code === 'object') {
-        ruleId = String(diagnostic.code.value);
-    }
-    const basicType = RULE_MAPPINGS[ruleId];
-    if (!basicType) {return undefined;}
-    
-    return mapRuleToPromptType(ruleId);
+/** 该 Sonar rule 是否是 SMELLCC 支持的 smell。 */
+export function isSupportedSonarRule(ruleId: string): boolean {
+    return Boolean(RULE_MAPPINGS[ruleId]);
 }
