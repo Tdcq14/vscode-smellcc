@@ -4,6 +4,13 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.7]
+
+### Fixed
+
+- Stale mirrored diagnostics after Apply: SMELLCC now clears its mirror for the refactored document immediately after the edit lands and re-syncs once Sonar finishes its async re-analysis. This removes the "already fixed, but still highlighted with a weird range" ghost diagnostics.
+- `Smellcc: Auto Save After Apply` now defaults to enabled, because Sonar only re-analyzes saved files — without saving, post-apply validation could never pass.
+
 ## [0.0.6]
 
 ### Added

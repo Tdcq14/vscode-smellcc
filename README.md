@@ -111,7 +111,7 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 3. **Required**: Run **`SMELLCC: Set API Key (SecretStorage)`** from the Command Palette and paste your DeepSeek API key (get one at https://platform.deepseek.com). The key is stored in VS Code SecretStorage — never in plaintext settings. Old plaintext keys are migrated automatically.
 4. **Optional**: Configure `Smellcc: Api Base Url` (default: `https://api.deepseek.com`).
 5. **Optional**: Change `Smellcc: Model` (default: `deepseek-chat`).
-6. **Optional**: Enable `Smellcc: Auto Save After Apply` to save an explicitly accepted edit immediately.
+6. **Optional**: `Smellcc: Auto Save After Apply` (default: **enabled**) saves an explicitly accepted edit immediately so Sonar re-analyzes and post-apply validation runs reliably. Disable only if you prefer to save manually.
 7. **Optional**: Disable `Smellcc: Validate After Apply` if you do not want SMELLCC to wait for Sonar post-validation.
 8. **Optional**: Adjust `Smellcc: Validation Timeout Ms` (default: 5000 ms).
 9. **Optional**: Increase `Smellcc: Max Output Tokens` for unusually large functions; responses that end with provider `finish_reason=length` are rejected.

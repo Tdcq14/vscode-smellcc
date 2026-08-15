@@ -22,9 +22,6 @@ export function activate(context: vscode.ExtensionContext) {
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
     context.subscriptions.push(diagnosticCollection);
 
-    const historyProvider = new RefactorHistoryProvider(context);
-    const previewManager = new RefactorPreviewManager(context, historyProvider);
-
     const syncDiagnostics = (document?: vscode.TextDocument) => {
         const targets = document ? [document] : vscode.workspace.textDocuments;
         for (const doc of targets) {
@@ -33,6 +30,22 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
     };
+
+    // Apply 之后旧镜像诊断不可信：先清掉，等 Sonar 异步重扫完再同步回来
+    const clearAndResyncDiagnostics = (uri: vscode.Uri) => {
+        diagnosticCollection.delete(uri);
+        for (const delay of [800, 2500]) {
+            setTimeout(() => {
+                const doc = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString());
+                if (doc) {
+                    syncDiagnostics(doc);
+                }
+            }, delay);
+        }
+    };
+
+    const historyProvider = new RefactorHistoryProvider(context);
+    const previewManager = new RefactorPreviewManager(context, historyProvider, clearAndResyncDiagnostics);
 
     context.subscriptions.push(
         vscode.languages.onDidChangeDiagnostics(event => {

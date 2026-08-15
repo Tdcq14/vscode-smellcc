@@ -2,7 +2,7 @@
   "name": "vscode-smellcc",
   "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",
@@ -111,8 +111,8 @@
         },
         "smellcc.autoSaveAfterApply": {
           "type": "boolean",
-          "default": false,
-          "description": "Automatically save the source file after an explicitly reviewed SMELLCC refactor is applied."
+          "default": true,
+          "description": "Automatically save the source file after an explicitly reviewed SMELLCC refactor is applied. Sonar only re-analyzes saved files, so keeping this enabled makes post-apply validation and diagnostic mirror refresh reliable."
         },
         "smellcc.validateAfterApply": {
           "type": "boolean",
