@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { deIndent, getMinIndentation, reIndent } from '../../indentUtils';
+import { deIndent, getMinIndentation, reIndent, sameTextNormalized } from '../../indentUtils';
 
 describe('indentUtils — pure logic', () => {
 
@@ -30,5 +30,14 @@ describe('indentUtils — pure logic', () => {
         const original = '    def f():\n        return 1\n\n    def g():\n        return 2\n';
         const stripped = deIndent(original, 4);
         assert.strictEqual(reIndent(stripped, 4), original);
+    });
+
+    it('sameTextNormalized treats CRLF and LF as equal', () => {
+        const lf = 'def f():\n    return 1\n';
+        const crlf = 'def f():\r\n    return 1\r\n';
+        assert.strictEqual(sameTextNormalized(lf, crlf), true);
+        assert.strictEqual(sameTextNormalized(lf, lf), true);
+        assert.strictEqual(sameTextNormalized(lf, 'def f():\n    return 2\n'), false);
+        assert.strictEqual(sameTextNormalized('', ''), true);
     });
 });

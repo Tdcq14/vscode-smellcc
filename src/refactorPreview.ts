@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { sameTextNormalized } from './indentUtils';
 import { analyzeChangeRisk, ChangeRisk } from './refactorAnalysis';
 import { RefactorHistoryProvider } from './refactorHistory';
 import {
@@ -36,6 +37,7 @@ type AppliedSnapshot = PreviewSnapshot & {
 export class RefactorPreviewManager implements vscode.TextDocumentContentProvider {
     private readonly documents = new Map<string, string>();
     private readonly undoStack: AppliedSnapshot[] = [];
+    private readonly snapshotsByHistoryId = new Map<number, AppliedSnapshot>();
     private nextPreviewId = 1;
     private nextHistoryId = 1;
 
@@ -165,7 +167,7 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
         const currentDocument = await vscode.workspace.openTextDocument(snapshot.sourceUri);
         const currentText = currentDocument.getText(snapshot.range);
 
-        if (currentText !== snapshot.before) {
+        if (!sameTextNormalized(currentText, snapshot.before)) {
             vscode.window.showWarningMessage(
                 'SMELLCC: The source changed while the diff was being reviewed. Refactor was not applied; please run it again.'
             );
@@ -188,8 +190,12 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             appliedRange: new vscode.Range(snapshot.range.start, appliedEnd)
         };
         this.undoStack.push(appliedSnapshot);
+        this.snapshotsByHistoryId.set(appliedSnapshot.historyId, appliedSnapshot);
         if (this.undoStack.length > 20) {
-            this.undoStack.shift();
+            const dropped = this.undoStack.shift();
+            if (dropped) {
+                this.snapshotsByHistoryId.delete(dropped.historyId);
+            }
         }
 
         this.history.add({
@@ -258,36 +264,82 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
     async undoLastRefactor(expectedHistoryId?: number): Promise<void> {
         const snapshot = this.undoStack[this.undoStack.length - 1];
         if (!snapshot) {
-            vscode.window.showInformationMessage('SMELLCC: There is no refactor to undo.');
+            vscode.window.showInformationMessage('SMELLCC: There is no refactor to undo in this session.');
             return;
         }
 
         if (expectedHistoryId !== undefined && snapshot.historyId !== expectedHistoryId) {
-            vscode.window.showWarningMessage('SMELLCC: A newer refactor exists, so this older change cannot be undone out of order.');
+            const choice = await vscode.window.showWarningMessage(
+                'SMELLCC: A newer refactor exists, so this older change cannot be undone out of order.',
+                'Undo Newest Refactor'
+            );
+            if (choice === 'Undo Newest Refactor') {
+                await this.undoLastRefactor();
+            }
             return;
         }
 
         const currentDocument = await vscode.workspace.openTextDocument(snapshot.sourceUri);
         const currentText = currentDocument.getText(snapshot.appliedRange);
 
-        if (currentText !== snapshot.after) {
+        if (!sameTextNormalized(currentText, snapshot.after)) {
+            if (sameTextNormalized(currentText, snapshot.before)) {
+                // 代码已经被外部改回原样（如 git checkout），undo 无对象，直接清栈
+                this.popSnapshot(snapshot.historyId);
+                this.history.update(snapshot.historyId, { decision: 'undone' });
+                vscode.window.showInformationMessage('SMELLCC: The refactored region already contains the original code, so the undo entry was cleared.');
+                return;
+            }
             vscode.window.showWarningMessage(
                 'SMELLCC: The refactored code has changed since it was applied, so safe undo was cancelled to avoid overwriting your edits.'
             );
             return;
         }
 
+        const wasSaved = !currentDocument.isDirty;
         const edit = new vscode.WorkspaceEdit();
         edit.replace(snapshot.sourceUri, snapshot.appliedRange, snapshot.before);
         const success = await vscode.workspace.applyEdit(edit);
 
         if (success) {
-            this.undoStack.pop();
+            this.popSnapshot(snapshot.historyId);
             this.history.update(snapshot.historyId, { decision: 'undone' });
+            if (wasSaved) {
+                // 之前文件已保存过，undo 后也同步回磁盘，避免“只在 buffer 里回滚”的错觉
+                await currentDocument.save();
+            }
             vscode.window.showInformationMessage('SMELLCC: Last refactor undone.');
         } else {
             vscode.window.showErrorMessage('SMELLCC: Failed to undo the last refactor.');
         }
+    }
+
+    async undoById(historyId: number): Promise<void> {
+        const snapshot = this.snapshotsByHistoryId.get(historyId);
+        if (!snapshot) {
+            vscode.window.showInformationMessage('SMELLCC: This refactor is no longer undoable in the current session.');
+            return;
+        }
+        const top = this.undoStack[this.undoStack.length - 1];
+        if (top && top.historyId !== historyId) {
+            const choice = await vscode.window.showWarningMessage(
+                'SMELLCC: This is not the most recent refactor, so it cannot be undone out of order.',
+                'Undo Newest Refactor'
+            );
+            if (choice === 'Undo Newest Refactor') {
+                await this.undoLastRefactor();
+            }
+            return;
+        }
+        await this.undoLastRefactor(historyId);
+    }
+
+    private popSnapshot(historyId: number): void {
+        const index = this.undoStack.findIndex(snapshot => snapshot.historyId === historyId);
+        if (index >= 0) {
+            this.undoStack.splice(index, 1);
+        }
+        this.snapshotsByHistoryId.delete(historyId);
     }
 
     private makePreviewUri(id: number, side: 'before' | 'after', fileName: string): vscode.Uri {

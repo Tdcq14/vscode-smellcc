@@ -14,7 +14,7 @@ It leverages Large Language Models (LLM) to refactor the **Top-10** frequent cod
 * **📦 Completion Integrity Guard**: Rejects empty or token-truncated LLM responses and extracts fenced code defensively before review.
 * **🐍 Pre-apply Syntax Gate**: Validates the proposed full Python document with `py_compile` when a Python interpreter is available; syntactically invalid proposals are blocked.
 * **✅ Post-apply Sonar Validation**: Watches refreshed Sonar diagnostics and checks whether the target rule decreased inside the modified scope.
-* **↩️ Guarded Undo**: Rolls back only when the AI-generated region has not been changed afterwards, protecting later developer edits.
+* **↩️ Guarded Undo**: Rolls back only when the AI-generated region has not been changed afterwards, protecting later developer edits. Available from the apply notification, `SMELLCC: Undo Last Refactor`, and the History view (toolbar button + right-click an applied entry).
 * **🕘 Refactor History View**: Records accepted/rejected/undone proposals, risk level, changed-line counts and validation result in an Explorer Tree View for the current session.
 
 ### Supported Code Smells
@@ -108,8 +108,8 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 
 1. Open VS Code Settings (`Ctrl + ,` or `Cmd + ,`).
 2. Search for **`smellcc`**.
-3. **Required**: Enter your API key in `Smellcc: Api Key`.
-4. **Optional**: Configure `Smellcc: Api Base Url`.
+3. **Required**: Run **`SMELLCC: Set API Key (SecretStorage)`** from the Command Palette and paste your DeepSeek API key (get one at https://platform.deepseek.com). The key is stored in VS Code SecretStorage — never in plaintext settings. Old plaintext keys are migrated automatically.
+4. **Optional**: Configure `Smellcc: Api Base Url` (default: `https://api.deepseek.com`).
 5. **Optional**: Change `Smellcc: Model` (default: `deepseek-chat`).
 6. **Optional**: Enable `Smellcc: Auto Save After Apply` to save an explicitly accepted edit immediately.
 7. **Optional**: Disable `Smellcc: Validate After Apply` if you do not want SMELLCC to wait for Sonar post-validation.
@@ -128,7 +128,7 @@ Open **Explorer → SMELLCC Refactor History** to inspect the current session. E
 5. Inspect the native red/green diff.
 6. Choose **Apply Refactor** / **Apply High-Risk Refactor** or **Reject**.
 7. If applied, inspect the post-apply Sonar validation result.
-8. Use **SMELLCC: Undo Last Refactor** if needed.
+8. Use **Undo** from the apply notification, `SMELLCC: Undo Last Refactor`, or right-click the entry in the History view.
 9. Review the session in **Explorer → SMELLCC Refactor History**.
 
 ---

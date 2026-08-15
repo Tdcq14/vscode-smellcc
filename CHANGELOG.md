@@ -4,6 +4,19 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.6]
+
+### Added
+
+- API key now stored in VS Code SecretStorage via `SMELLCC: Set API Key` command; legacy plaintext setting is migrated automatically on activation.
+- First-run refactor prompts for the API key when none is set.
+- Undo entry points: History view toolbar button and per-entry context-menu undo.
+
+### Fixed
+
+- Undo hardened: EOL-normalized stale-source checks (CRLF files no longer trigger false "source changed" refusals), auto-save after undo when the file had been saved, and the "already reverted externally" case now clears the undo entry instead of refusing.
+- Out-of-order undo now offers to undo the newest refactor instead of just failing.
+
 ## [0.0.5]
 
 ### Fixed

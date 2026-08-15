@@ -2,7 +2,7 @@
   "name": "vscode-smellcc",
   "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",
@@ -33,7 +33,21 @@
       },
       {
         "command": "smellcc.undoLastRefactor",
-        "title": "SMELLCC: Undo Last Refactor"
+        "title": "SMELLCC: Undo Last Refactor",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "smellcc.undoRefactorEntry",
+        "title": "SMELLCC: Undo This Refactor",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "smellcc.setApiKey",
+        "title": "SMELLCC: Set API Key (SecretStorage)"
+      },
+      {
+        "command": "smellcc.clearApiKey",
+        "title": "SMELLCC: Clear Stored API Key"
       },
       {
         "command": "smellcc.clearHistory",
@@ -59,9 +73,21 @@
     "menus": {
       "view/title": [
         {
+          "command": "smellcc.undoLastRefactor",
+          "when": "view == smellcc.refactorHistory",
+          "group": "navigation@1"
+        },
+        {
           "command": "smellcc.clearHistory",
           "when": "view == smellcc.refactorHistory",
-          "group": "navigation"
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "smellcc.undoRefactorEntry",
+          "when": "view == smellcc.refactorHistory && viewItem =~ /smellccHistoryEntry:applied/",
+          "group": "inline@1"
         }
       ]
     },
@@ -71,7 +97,7 @@
         "smellcc.apiKey": {
           "type": "string",
           "default": "",
-          "description": "LLM API Key"
+          "description": "Deprecated: API keys are now stored in VS Code SecretStorage. Run 'SMELLCC: Set API Key' instead. Existing plaintext values are migrated automatically."
         },
         "smellcc.apiBaseUrl": {
           "type": "string",

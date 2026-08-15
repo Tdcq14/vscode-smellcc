@@ -62,10 +62,15 @@ export class RefactorHistoryProvider implements vscode.TreeDataProvider<HistoryT
 }
 
 class HistoryTreeItem extends vscode.TreeItem {
+    readonly entryId: number;
+    readonly decision: HistoryDecision;
+
     constructor(entry: RefactorHistoryEntry) {
         const fileName = path.basename(entry.sourceUri.fsPath || entry.sourceUri.path);
         super(`${entry.smellType} — ${fileName}`, vscode.TreeItemCollapsibleState.None);
 
+        this.entryId = entry.id;
+        this.decision = entry.decision;
         this.description = `${decisionLabel(entry.decision)} · ${entry.risk.level} risk · +${entry.risk.addedLines}/-${entry.risk.removedLines}`;
         this.iconPath = new vscode.ThemeIcon(iconFor(entry));
         this.tooltip = buildTooltip(entry);
@@ -74,7 +79,7 @@ class HistoryTreeItem extends vscode.TreeItem {
             title: 'Open refactored file',
             arguments: [entry.sourceUri, { selection: new vscode.Range(entry.line, 0, entry.line, 0) }]
         };
-        this.contextValue = 'smellccHistoryEntry';
+        this.contextValue = `smellccHistoryEntry:${entry.decision}`;
     }
 }
 

@@ -64,3 +64,16 @@ export function reIndent(code: string, indentSize: number): string {
         return indentString + line;
     }).join('\n');
 }
+
+/**
+ * 行尾归一化后的文本相等比较。
+ * 用于 Apply/Undo 的 stale-source 检查：同一份代码在 CRLF/LF
+ * 文件里 getText 结果不同，严格 === 会误判“源码被修改过”。
+ */
+export function sameTextNormalized(a: string, b: string): boolean {
+    return a === b || normalizeEol(a) === normalizeEol(b);
+}
+
+function normalizeEol(text: string): string {
+    return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}

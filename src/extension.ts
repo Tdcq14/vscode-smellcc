@@ -2,12 +2,15 @@
 import * as vscode from 'vscode';
 import { mirrorSonarDiagnostics, mapRuleToPromptType, SMELL_TYPES } from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
-import { callLLMApi } from './llmClient';
+import { callLLMApi, deleteApiKey, getApiKey, initSecretStorage, migrateLegacyApiKey, storeApiKey } from './llmClient';
 import { RefactorHistoryProvider } from './refactorHistory';
 import { RefactorPreviewManager } from './refactorPreview';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('SMELLCC Activated!');
+
+    initSecretStorage(context.secrets);
+    migrateLegacyApiKey(context).catch(err => console.warn('[SMELLCC] API key migration skipped:', err));
 
     const sonarExt = vscode.extensions.getExtension('SonarSource.sonarlint-vscode');
     if (!sonarExt) {
@@ -61,7 +64,55 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('smellcc.setApiKey', async () => {
+            const key = await vscode.window.showInputBox({
+                title: 'SMELLCC: Set DeepSeek API Key',
+                prompt: 'Paste your API key (stored securely in VS Code SecretStorage). Get one at https://platform.deepseek.com',
+                placeHolder: 'sk-...',
+                password: true,
+                ignoreFocusOut: true
+            });
+            if (key === undefined) {
+                return;
+            }
+            const trimmed = key.trim();
+            if (!trimmed) {
+                vscode.window.showErrorMessage('SMELLCC: API key cannot be empty.');
+                return;
+            }
+            try {
+                await storeApiKey(trimmed);
+                vscode.window.showInformationMessage('SMELLCC: API key stored securely in VS Code SecretStorage.');
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`SMELLCC: ${err.message}`);
+            }
+        }),
+        vscode.commands.registerCommand('smellcc.clearApiKey', async () => {
+            const choice = await vscode.window.showWarningMessage(
+                'SMELLCC: Remove the stored API key from SecretStorage?',
+                'Remove',
+                'Cancel'
+            );
+            if (choice === 'Remove') {
+                await deleteApiKey();
+                vscode.window.showInformationMessage('SMELLCC: API key removed.');
+            }
+        }),
+        vscode.commands.registerCommand('smellcc.undoRefactorEntry', (item: unknown) => {
+            const entryId = typeof item === 'number'
+                ? item
+                : (item as { entryId?: number } | undefined)?.entryId;
+            if (typeof entryId === 'number') {
+                previewManager.undoById(entryId);
+            }
+        })
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('smellcc.refactor', async (document: vscode.TextDocument, range: vscode.Range, ruleId: string, message: string) => {
+            if (!(await ensureApiKey())) {
+                return;
+            }
             const expandedRange = await expandRangeToFunction(document, range);
             const smellyCode = document.getText(expandedRange);
             const relativeLine = range.start.line - expandedRange.start.line + 1;
@@ -91,6 +142,35 @@ export function activate(context: vscode.ExtensionContext) {
             }
         })
     );
+}
+
+async function ensureApiKey(): Promise<boolean> {
+    if (await getApiKey()) {
+        return true;
+    }
+    const key = await vscode.window.showInputBox({
+        title: 'SMELLCC: DeepSeek API Key Required',
+        prompt: 'Enter your API key (stored in VS Code SecretStorage, not in plaintext settings). Get one at https://platform.deepseek.com',
+        placeHolder: 'sk-...',
+        password: true,
+        ignoreFocusOut: true
+    });
+    if (key === undefined) {
+        return false;
+    }
+    const trimmed = key.trim();
+    if (!trimmed) {
+        vscode.window.showErrorMessage('SMELLCC: API key cannot be empty.');
+        return false;
+    }
+    try {
+        await storeApiKey(trimmed);
+        vscode.window.showInformationMessage('SMELLCC: API key stored securely. Generating refactor...');
+        return true;
+    } catch (err: any) {
+        vscode.window.showErrorMessage(`SMELLCC: ${err.message}`);
+        return false;
+    }
 }
 
 async function countExternalReferences(
