@@ -2,17 +2,19 @@
 
 This VS Code extension is an implementation of the prototype system described in the TOSEM paper: **"Clean Code, Better Models: Enhancing LLM Performance with Smell-Cleaned Dataset"**.
 
-It leverages Large Language Models (LLM) to automatically refactor the **Top-10** most frequent code smells in Python codebases detected by **SonarLint**.
+It leverages Large Language Models (LLM) to refactor the **Top-10** frequent code smells in Python codebases detected by **SonarLint**, while keeping the developer in control of every generated change.
 
 ## ✨ Features
 
-* **🔌 Seamless Integration**: Works directly on top of **SonarLint**'s detection engine. No extra server setup required.
-* **🔍 Automatic Detection**: Real-time detection of 10 types of code smells (e.g., Long Parameter List, Collapsible If, Dead Code) via SonarLint.
-* **🤖 AI-Powered Refactoring**: Utilizes Chain-of-Thought prompting strategies to generate context-aware fixes using LLMs (DeepSeek/OpenAI-compatible APIs).
-* **💡 Quick Fix Integration**: Integrated natively with VS Code's lightbulb interface.
-* **🔀 Review-before-Apply Diff**: Every generated refactor is opened in VS Code's native diff editor before source code is modified. Developers can inspect changed lines and explicitly apply or reject the proposal.
-* **↩️ Safe Undo**: SMELLCC keeps a bounded refactoring history and can undo the most recent applied change only when the generated region has not been edited afterwards, avoiding accidental overwrite of developer work.
-* **🧭 Symbol-aware Scope Selection**: SMELLCC prefers VS Code document symbols to locate the smallest enclosing function/method, with an indentation-based fallback for resilience.
+* **🔌 SonarLint Integration**: Uses Sonar diagnostics as the trigger and target signal for supported smell rules.
+* **🧭 Symbol-aware Scope Selection**: Prefers VS Code document symbols to locate the smallest enclosing function/method, with an indentation-based fallback.
+* **🤖 Smell-specific LLM Refactoring**: Builds a prompt from the smell type, exact diagnostic location, target line and enclosing code context.
+* **🔀 Review-before-Apply Diff**: Opens the complete before/after proposal in VS Code's native diff editor before the working file is modified.
+* **🛡️ Change Risk Guard**: Computes line-level edit statistics and flags unexpectedly broad changes, large deletions or suspicious signature edits before Apply.
+* **🐍 Pre-apply Syntax Gate**: Validates the proposed full Python document with `py_compile` when a Python interpreter is available; syntactically invalid proposals are blocked.
+* **✅ Post-apply Sonar Validation**: Watches refreshed Sonar diagnostics and checks whether the target rule decreased inside the modified scope.
+* **↩️ Guarded Undo**: Rolls back only when the AI-generated region has not been changed afterwards, protecting later developer edits.
+* **🕘 Refactor History View**: Records accepted/rejected/undone proposals, risk level, changed-line counts and validation result in an Explorer Tree View for the current session.
 
 ### Supported Code Smells
 1. Collapsible if Statements
@@ -28,33 +30,64 @@ It leverages Large Language Models (LLM) to automatically refactor the **Top-10*
 
 ---
 
-## 🔀 Reviewable Refactoring Workflow
+## 🔁 Reviewable and Verifiable Refactoring Workflow
 
-SMELLCC now uses a human-in-the-loop workflow instead of immediately overwriting the source file:
+SMELLCC no longer treats an LLM response as an edit that should be blindly committed to the workspace.
 
 ```text
-SonarLint diagnostic
+Sonar diagnostic
       ↓
-SMELLCC Quick Fix
+Symbol-aware localization
       ↓
-Symbol-aware context extraction
+Smell-specific LLM proposal
       ↓
-LLM refactoring proposal
+Change-risk analysis + Python syntax gate
       ↓
 VS Code native Diff Review
-   ↙               ↘
-Reject             Apply
-(no mutation)      ↓
-              WorkspaceEdit
-                   ↓
-              Safe Undo history
+   ↙                    ↘
+Reject                  Apply
+(no mutation)             ↓
+                      stale-source check
+                           ↓
+                      WorkspaceEdit
+                           ↓
+                  Sonar post-validation
+                    ↙       ↓        ↘
+                 passed   failed   inconclusive
+                           ↓
+                     keep / safe undo
+                           ↓
+                  Session History View
 ```
 
-The diff preview uses read-only virtual documents, so the proposal can be reviewed before the working file is touched. This complements Git rather than replacing it: Git remains useful for repository-level history and review, while SMELLCC provides an immediate **pre-apply decision point** inside the refactoring interaction.
+### Why a plugin-level diff if the project already uses Git?
 
-After reviewing the red/green changed lines, choose **Apply Refactor** or **Reject**. Applied changes are left unsaved by default so the developer retains normal editor control. Set `smellcc.autoSaveAfterApply` to `true` if automatic saving is preferred.
+Git remains the repository-level source of truth for history, commits and code review. SMELLCC's diff solves a different problem: it creates a **proposal-level decision point before the AI touches the working file**. The developer sees exactly what this single refactoring request intends to change, without mixing it with unrelated uncommitted workspace edits.
 
-The command **SMELLCC: Undo Last Refactor** provides a plugin-level guarded undo. If the developer has already modified the generated region, SMELLCC refuses the undo rather than overwriting those newer edits.
+### Risk guard
+
+Before Apply, SMELLCC compares the original and proposed scope with a line-level LCS calculation and reports metrics such as `+added/-removed` lines and an overall risk level. Examples of high-risk signals include:
+
+* unexpectedly changing a function signature for a smell that should not require it;
+* modifying a large fraction of the enclosing scope;
+* deleting a large fraction of the original function;
+* turning a small quick fix into a very large edit.
+
+High-risk proposals are still inspectable in the native diff, but require a stronger explicit confirmation.
+
+### Validation loop
+
+When possible, the proposed full Python document is syntax-checked **before Apply**. After Apply, SMELLCC waits for Sonar diagnostics to refresh and compares the target rule count in the changed scope. Validation can be:
+
+* **passed** — the target rule decreased;
+* **failed** — Sonar refreshed but the target rule remained;
+* **inconclusive** — Sonar did not refresh before the configured timeout.
+
+A failed validation can immediately trigger the guarded SMELLCC undo.
+
+### Refactor history
+
+Open **Explorer → SMELLCC Refactor History** to inspect the current session. Each row records the smell, file, decision, risk level, changed-line counts, syntax result and Sonar validation status. This is intended both for developer traceability and for future empirical evaluation of acceptance/rejection and validation outcomes.
 
 ---
 
@@ -76,10 +109,10 @@ The command **SMELLCC: Undo Last Refactor** provides a plugin-level guarded undo
 2. Search for **`smellcc`**.
 3. **Required**: Enter your API key in `Smellcc: Api Key`.
 4. **Optional**: Configure `Smellcc: Api Base Url`.
-   * Default: `https://api.deepseek.com`
-   * OpenAI-compatible proxies can also be used.
 5. **Optional**: Change `Smellcc: Model` (default: `deepseek-coder`).
-6. **Optional**: Enable `Smellcc: Auto Save After Apply` if you want reviewed changes to be saved immediately after application.
+6. **Optional**: Enable `Smellcc: Auto Save After Apply` to save an explicitly accepted edit immediately.
+7. **Optional**: Disable `Smellcc: Validate After Apply` if you do not want SMELLCC to wait for Sonar post-validation.
+8. **Optional**: Adjust `Smellcc: Validation Timeout Ms` (default: 5000 ms).
 
 ---
 
@@ -87,12 +120,13 @@ The command **SMELLCC: Undo Last Refactor** provides a plugin-level guarded undo
 
 1. Open a Python (`.py`) file.
 2. Wait for SonarLint to analyze the file.
-3. If a supported code smell is detected, a warning diagnostic is mirrored by SMELLCC.
-4. Click the lightbulb icon (or press `Ctrl + .`).
-5. Select **"Refactor: [Smell Name] (SMELLCC)"**.
-6. SMELLCC asks the LLM for a refactoring proposal and opens a native VS Code diff.
-7. Inspect the changed lines and select **Apply Refactor** or **Reject**.
-8. If needed, run **SMELLCC: Undo Last Refactor** from the Command Palette.
+3. Click the lightbulb on a supported smell and select **"Refactor: [Smell Name] (SMELLCC)"**.
+4. SMELLCC generates a proposal, evaluates its risk and checks Python syntax when possible.
+5. Inspect the native red/green diff.
+6. Choose **Apply Refactor** / **Apply High-Risk Refactor** or **Reject**.
+7. If applied, inspect the post-apply Sonar validation result.
+8. Use **SMELLCC: Undo Last Refactor** if needed.
+9. Review the session in **Explorer → SMELLCC Refactor History**.
 
 ---
 
@@ -101,6 +135,7 @@ The command **SMELLCC: Undo Last Refactor** provides a plugin-level guarded undo
 * **VS Code**: version 1.106.0 or higher.
 * **SonarLint Extension**: Must be installed and active.
 * **Java Runtime (JRE)**: Version 17 or higher (required by SonarLint).
+* **Python interpreter**: Recommended for the pre-apply syntax gate. If unavailable, review can continue but syntax validation is marked unavailable.
 * **Internet Connection**: Required to access the configured LLM API.
 
 ## 🔗 References

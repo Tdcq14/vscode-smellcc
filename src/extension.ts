@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { mirrorSonarDiagnostics, mapRuleToPromptType } from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
 import { callLLMApi } from './llmClient';
+import { RefactorHistoryProvider } from './refactorHistory';
 import { RefactorPreviewManager } from './refactorPreview';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -18,7 +19,8 @@ export function activate(context: vscode.ExtensionContext) {
     const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
     context.subscriptions.push(diagnosticCollection);
 
-    const previewManager = new RefactorPreviewManager(context);
+    const historyProvider = new RefactorHistoryProvider(context);
+    const previewManager = new RefactorPreviewManager(context, historyProvider);
 
     const handleDiagnosticsChange = () => {
         if (vscode.window.activeTextEditor) {
@@ -50,27 +52,18 @@ export function activate(context: vscode.ExtensionContext) {
 
             const prompt = buildSmellCCPrompt(smellType, smellyCode, message, relativeLine, targetLineText);
 
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: `SMELLCC: Generating ${smellType} refactor...`,
-                cancellable: false
-            }, async () => {
-                try {
-                    const newCode = await callLLMApi(prompt, smellyCode);
-                    const applied = await previewManager.previewAndApply(document, expandedRange, newCode, smellType);
+            try {
+                const newCode = await vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: `SMELLCC: Generating ${smellType} refactor...`,
+                    cancellable: false
+                }, () => callLLMApi(prompt, smellyCode));
 
-                    if (applied) {
-                        const autoSave = vscode.workspace.getConfiguration('smellcc').get<boolean>('autoSaveAfterApply', false);
-                        if (autoSave) {
-                            const updatedDocument = await vscode.workspace.openTextDocument(document.uri);
-                            await updatedDocument.save();
-                        }
-                    }
-                } catch (err: any) {
-                    vscode.window.showErrorMessage(`SMELLCC Error: ${err.message}`);
-                    console.error(err);
-                }
-            });
+                await previewManager.previewAndApply(document, expandedRange, newCode, { smellType, ruleId });
+            } catch (err: any) {
+                vscode.window.showErrorMessage(`SMELLCC Error: ${err.message}`);
+                console.error(err);
+            }
         })
     );
 }
@@ -125,8 +118,8 @@ function rangeSize(range: vscode.Range): number {
 }
 
 function expandRangeByIndentation(document: vscode.TextDocument, originalRange: vscode.Range): vscode.Range {
-    let startLine = originalRange.start.line;
-    let endLine = originalRange.end.line;
+    const startLine = originalRange.start.line;
+    const endLine = originalRange.end.line;
     let foundDef = false;
     let defLineIndex = startLine;
 

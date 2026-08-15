@@ -29,8 +29,37 @@
       {
         "command": "smellcc.undoLastRefactor",
         "title": "SMELLCC: Undo Last Refactor"
+      },
+      {
+        "command": "smellcc.clearHistory",
+        "title": "SMELLCC: Clear Refactor History",
+        "icon": "$(clear-all)"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "smellcc.refactorHistory",
+          "name": "SMELLCC Refactor History",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "smellcc.refactorHistory",
+        "contents": "No SMELLCC refactors in this session yet.\nRun a SMELLCC quick fix to review a proposal."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "smellcc.clearHistory",
+          "when": "view == smellcc.refactorHistory",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "SMELLCC Configuration",
       "properties": {
@@ -53,6 +82,18 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically save the source file after an explicitly reviewed SMELLCC refactor is applied."
+        },
+        "smellcc.validateAfterApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "After Apply, wait for Sonar diagnostics to refresh and verify that the target smell rule decreased in the modified scope."
+        },
+        "smellcc.validationTimeoutMs": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 500,
+          "maximum": 30000,
+          "description": "Maximum time to wait for Sonar diagnostics to refresh after a refactor is applied."
         }
       }
     }

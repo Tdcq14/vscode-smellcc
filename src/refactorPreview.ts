@@ -1,5 +1,19 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { analyzeChangeRisk, ChangeRisk } from './refactorAnalysis';
+import { RefactorHistoryProvider } from './refactorHistory';
+import {
+    captureSonarBaseline,
+    SonarBaseline,
+    SyntaxValidationResult,
+    validatePythonSyntax,
+    waitForSonarValidation
+} from './refactorValidation';
+
+type RefactorMetadata = {
+    smellType: string;
+    ruleId: string;
+};
 
 type PreviewSnapshot = {
     sourceUri: vscode.Uri;
@@ -7,7 +21,11 @@ type PreviewSnapshot = {
     startOffset: number;
     before: string;
     after: string;
-    smellType: string;
+    metadata: RefactorMetadata;
+    risk: ChangeRisk;
+    syntax: SyntaxValidationResult;
+    sonarBaseline: SonarBaseline;
+    historyId: number;
 };
 
 type AppliedSnapshot = PreviewSnapshot & {
@@ -16,10 +34,14 @@ type AppliedSnapshot = PreviewSnapshot & {
 
 export class RefactorPreviewManager implements vscode.TextDocumentContentProvider {
     private readonly documents = new Map<string, string>();
-    private readonly history: AppliedSnapshot[] = [];
-    private nextId = 1;
+    private readonly undoStack: AppliedSnapshot[] = [];
+    private nextPreviewId = 1;
+    private nextHistoryId = 1;
 
-    constructor(private readonly context: vscode.ExtensionContext) {
+    constructor(
+        private readonly context: vscode.ExtensionContext,
+        private readonly history: RefactorHistoryProvider
+    ) {
         context.subscriptions.push(
             vscode.workspace.registerTextDocumentContentProvider('smellcc-preview', this),
             vscode.commands.registerCommand('smellcc.undoLastRefactor', () => this.undoLastRefactor())
@@ -34,7 +56,7 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
         document: vscode.TextDocument,
         range: vscode.Range,
         newCode: string,
-        smellType: string
+        metadata: RefactorMetadata
     ): Promise<boolean> {
         const originalDocumentText = document.getText();
         const startOffset = document.offsetAt(range.start);
@@ -44,14 +66,19 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             originalDocumentText.slice(0, startOffset) + newCode + originalDocumentText.slice(endOffset);
 
         if (before === newCode) {
-            vscode.window.showInformationMessage(`SMELLCC: ${smellType} produced no textual changes.`);
+            vscode.window.showInformationMessage(`SMELLCC: ${metadata.smellType} produced no textual changes.`);
             return false;
         }
 
-        const id = this.nextId++;
+        const risk = analyzeChangeRisk(before, newCode, metadata.smellType);
+        const syntax = await validatePythonSyntax(proposedDocumentText);
+        const historyId = this.nextHistoryId++;
+        const sonarBaseline = captureSonarBaseline(document.uri, metadata.ruleId, range);
+
+        const previewId = this.nextPreviewId++;
         const fileName = path.basename(document.fileName || document.uri.path || 'refactor.py');
-        const originalUri = this.makePreviewUri(id, 'before', fileName);
-        const proposedUri = this.makePreviewUri(id, 'after', fileName);
+        const originalUri = this.makePreviewUri(previewId, 'before', fileName);
+        const proposedUri = this.makePreviewUri(previewId, 'after', fileName);
 
         this.documents.set(originalUri.toString(), originalDocumentText);
         this.documents.set(proposedUri.toString(), proposedDocumentText);
@@ -61,17 +88,24 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             'vscode.diff',
             originalUri,
             proposedUri,
-            `SMELLCC Review: ${smellType} — ${fileName}`,
+            `SMELLCC Review: ${metadata.smellType} — ${fileName}`,
             { preview: false }
         );
 
-        const decision = await vscode.window.showInformationMessage(
-            `SMELLCC generated a ${smellType} refactor. Review the highlighted diff, then apply or reject it.`,
-            'Apply Refactor',
-            'Reject'
-        );
+        const decision = await this.requestDecision(metadata.smellType, risk, syntax);
+        const applyLabel = risk.level === 'high' ? 'Apply High-Risk Refactor' : 'Apply Refactor';
 
-        if (decision !== 'Apply Refactor') {
+        if (decision !== applyLabel) {
+            this.history.add({
+                id: historyId,
+                timestamp: Date.now(),
+                sourceUri: document.uri,
+                line: range.start.line,
+                smellType: metadata.smellType,
+                decision: 'rejected',
+                risk,
+                syntax
+            });
             if (decision === 'Reject') {
                 vscode.window.showInformationMessage('SMELLCC: Refactor rejected. No source code was changed.');
             }
@@ -84,8 +118,47 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             startOffset,
             before,
             after: newCode,
-            smellType
+            metadata,
+            risk,
+            syntax,
+            sonarBaseline,
+            historyId
         });
+    }
+
+    private async requestDecision(
+        smellType: string,
+        risk: ChangeRisk,
+        syntax: SyntaxValidationResult
+    ): Promise<string | undefined> {
+        const changeSummary = `+${risk.addedLines}/-${risk.removedLines}, ${risk.level} risk`;
+
+        if (syntax.status === 'failed') {
+            await vscode.window.showErrorMessage(
+                `SMELLCC proposal has invalid Python syntax and was blocked before Apply. ${syntax.detail}`
+            );
+            return 'Reject';
+        }
+
+        if (risk.level === 'high') {
+            const reasons = risk.reasons.length > 0 ? ` ${risk.reasons.join('; ')}.` : '';
+            return vscode.window.showWarningMessage(
+                `SMELLCC generated a high-risk ${smellType} proposal (${changeSummary}).${reasons} Review the diff carefully.`,
+                { modal: true },
+                'Apply High-Risk Refactor',
+                'Reject'
+            );
+        }
+
+        const syntaxNote = syntax.status === 'passed'
+            ? 'Python syntax check passed.'
+            : 'Python syntax check unavailable; inspect the diff before applying.';
+
+        return vscode.window.showInformationMessage(
+            `SMELLCC generated a ${smellType} refactor (${changeSummary}). ${syntaxNote}`,
+            'Apply Refactor',
+            'Reject'
+        );
     }
 
     private async applySnapshot(snapshot: PreviewSnapshot): Promise<boolean> {
@@ -110,29 +183,88 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
 
         const updatedDocument = await vscode.workspace.openTextDocument(snapshot.sourceUri);
         const appliedEnd = updatedDocument.positionAt(snapshot.startOffset + snapshot.after.length);
-        this.history.push({
+        const appliedSnapshot: AppliedSnapshot = {
             ...snapshot,
             appliedRange: new vscode.Range(snapshot.range.start, appliedEnd)
-        });
-        if (this.history.length > 20) {
-            this.history.shift();
+        };
+        this.undoStack.push(appliedSnapshot);
+        if (this.undoStack.length > 20) {
+            this.undoStack.shift();
         }
 
-        const undoNow = await vscode.window.showInformationMessage(
-            `SMELLCC: ${snapshot.smellType} refactor applied.`,
-            'Undo SMELLCC Refactor'
+        this.history.add({
+            id: snapshot.historyId,
+            timestamp: Date.now(),
+            sourceUri: snapshot.sourceUri,
+            line: snapshot.range.start.line,
+            smellType: snapshot.metadata.smellType,
+            decision: 'applied',
+            risk: snapshot.risk,
+            syntax: snapshot.syntax
+        });
+
+        const autoSave = vscode.workspace.getConfiguration('smellcc').get<boolean>('autoSaveAfterApply', false);
+        if (autoSave) {
+            await updatedDocument.save();
+        }
+
+        const validationEnabled = vscode.workspace.getConfiguration('smellcc').get<boolean>('validateAfterApply', true);
+        if (!validationEnabled) {
+            await this.showAppliedMessage(appliedSnapshot, 'SMELLCC: Refactor applied. Post-apply Sonar validation is disabled.');
+            return true;
+        }
+
+        const timeoutMs = vscode.workspace.getConfiguration('smellcc').get<number>('validationTimeoutMs', 5000);
+        const validation = await waitForSonarValidation(
+            snapshot.sourceUri,
+            snapshot.metadata.ruleId,
+            appliedSnapshot.appliedRange,
+            snapshot.sonarBaseline,
+            timeoutMs
         );
-        if (undoNow === 'Undo SMELLCC Refactor') {
-            await this.undoLastRefactor();
+        this.history.update(snapshot.historyId, { validation });
+
+        if (validation.status === 'passed') {
+            await this.showAppliedMessage(
+                appliedSnapshot,
+                `SMELLCC: ${snapshot.metadata.smellType} refactor validated — target Sonar rule count ${validation.beforeCount} → ${validation.afterCount}.`
+            );
+        } else if (validation.status === 'failed') {
+            const choice = await vscode.window.showWarningMessage(
+                `SMELLCC: Refactor was applied, but validation failed: ${validation.detail}`,
+                { modal: true },
+                'Undo SMELLCC Refactor',
+                'Keep Anyway'
+            );
+            if (choice === 'Undo SMELLCC Refactor') {
+                await this.undoLastRefactor();
+            }
+        } else {
+            await this.showAppliedMessage(
+                appliedSnapshot,
+                `SMELLCC: Refactor applied, but validation is inconclusive: ${validation.detail}`
+            );
         }
 
         return true;
     }
 
-    async undoLastRefactor(): Promise<void> {
-        const snapshot = this.history[this.history.length - 1];
+    private async showAppliedMessage(snapshot: AppliedSnapshot, message: string): Promise<void> {
+        const undoNow = await vscode.window.showInformationMessage(message, 'Undo SMELLCC Refactor');
+        if (undoNow === 'Undo SMELLCC Refactor') {
+            await this.undoLastRefactor(snapshot.historyId);
+        }
+    }
+
+    async undoLastRefactor(expectedHistoryId?: number): Promise<void> {
+        const snapshot = this.undoStack[this.undoStack.length - 1];
         if (!snapshot) {
             vscode.window.showInformationMessage('SMELLCC: There is no refactor to undo.');
+            return;
+        }
+
+        if (expectedHistoryId !== undefined && snapshot.historyId !== expectedHistoryId) {
+            vscode.window.showWarningMessage('SMELLCC: A newer refactor exists, so this older change cannot be undone out of order.');
             return;
         }
 
@@ -151,7 +283,8 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
         const success = await vscode.workspace.applyEdit(edit);
 
         if (success) {
-            this.history.pop();
+            this.undoStack.pop();
+            this.history.update(snapshot.historyId, { decision: 'undone' });
             vscode.window.showInformationMessage('SMELLCC: Last refactor undone.');
         } else {
             vscode.window.showErrorMessage('SMELLCC: Failed to undo the last refactor.');
