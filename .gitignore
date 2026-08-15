@@ -8,3 +8,6 @@ IMPROVEMENTS.md
 IMPROVEMENTS_V2.md
 # local npm cache used for sandboxed installs
 .npm-cache/
+
+# gh local config (contains auth token — never commit)
+.gh-config/
