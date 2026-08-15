@@ -1,10 +1,18 @@
 // src/extension.ts
 import * as vscode from 'vscode';
-import { getRuleIdFromDiagnostic, isSonarDiagnostic, isSupportedSonarRule, mapRuleToPromptType, SMELL_TYPES } from './detector';
+import {
+    getRuleIdFromDiagnostic,
+    isSonarDiagnostic,
+    isSupportedSonarRule,
+    mapRuleToPromptType,
+    mirrorSonarDiagnostics,
+    SMELL_TYPES
+} from './detector';
 import { buildSmellCCPrompt } from './promptBuilder';
 import { callLLMApi, deleteApiKey, getApiKey, initSecretStorage, migrateLegacyApiKey, storeApiKey } from './llmClient';
 import { RefactorHistoryProvider } from './refactorHistory';
 import { RefactorPreviewManager } from './refactorPreview';
+import { getSonarFingerprint } from './refactorValidation';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('SMELLCC Activated!');
@@ -19,8 +27,76 @@ export function activate(context: vscode.ExtensionContext) {
         });
     }
 
+    // ===== 品牌诊断镜像（可在设置中关闭：smellcc.mirrorDiagnostics）=====
+    const diagnosticCollection = vscode.languages.createDiagnosticCollection('smellcc');
+    context.subscriptions.push(diagnosticCollection);
+
+    const mirrorEnabled = () => vscode.workspace.getConfiguration('smellcc').get<boolean>('mirrorDiagnostics', true);
+
+    // uri -> Apply 时的 Sonar 指纹；Sonar 重扫完成前不同步，防止幽灵诊断
+    const suppressedFingerprints = new Map<string, string>();
+
+    const syncDiagnostics = (document?: vscode.TextDocument) => {
+        if (!mirrorEnabled()) {
+            diagnosticCollection.clear();
+            return;
+        }
+        const targets = document ? [document] : vscode.workspace.textDocuments;
+        for (const doc of targets) {
+            const key = doc.uri.toString();
+            if (doc.languageId !== 'python' || suppressedFingerprints.has(key)) {
+                continue;
+            }
+            mirrorSonarDiagnostics(doc, diagnosticCollection);
+        }
+    };
+
+    // Apply 之后清镜像并抑制，等 Sonar 指纹变化（=重扫完成）或 8s 兜底再恢复
+    const clearAndResyncDiagnostics = (uri: vscode.Uri) => {
+        diagnosticCollection.delete(uri);
+        suppressedFingerprints.set(uri.toString(), getSonarFingerprint(uri));
+        setTimeout(() => {
+            suppressedFingerprints.delete(uri.toString());
+            const doc = vscode.workspace.textDocuments.find(open => open.uri.toString() === uri.toString());
+            if (doc) {
+                syncDiagnostics(doc);
+            }
+        }, 8000);
+    };
+
     const historyProvider = new RefactorHistoryProvider(context);
-    const previewManager = new RefactorPreviewManager(context, historyProvider);
+    const previewManager = new RefactorPreviewManager(context, historyProvider, clearAndResyncDiagnostics);
+
+    context.subscriptions.push(
+        vscode.languages.onDidChangeDiagnostics(event => {
+            for (const uri of event.uris) {
+                const key = uri.toString();
+                const fingerprint = suppressedFingerprints.get(key);
+                if (fingerprint !== undefined) {
+                    // Sonar 重新分析完成（指纹变了）才解除抑制
+                    if (getSonarFingerprint(uri) !== fingerprint) {
+                        suppressedFingerprints.delete(key);
+                    } else {
+                        continue;
+                    }
+                }
+                const changedDoc = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === key);
+                if (changedDoc) {
+                    syncDiagnostics(changedDoc);
+                }
+            }
+            // 兜底：语言服务器可能刷新了未出现在 event.uris 里的文档
+            syncDiagnostics();
+        }),
+        vscode.workspace.onDidOpenTextDocument(doc => syncDiagnostics(doc)),
+        vscode.workspace.onDidSaveTextDocument(doc => syncDiagnostics(doc)),
+        vscode.window.onDidChangeActiveTextEditor(editor => syncDiagnostics(editor?.document))
+    );
+
+    // 激活时立即同步已存在的 Sonar 诊断；Sonar 异步启动，按 500ms/1.5s/4s 重试
+    syncDiagnostics();
+    const retryTimers = [500, 1500, 4000].map(delay => setTimeout(() => syncDiagnostics(), delay));
+    context.subscriptions.push({ dispose: () => retryTimers.forEach(timer => clearTimeout(timer)) });
 
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new SmellCCActionProvider(), {
@@ -271,8 +347,10 @@ class SmellCCActionProvider implements vscode.CodeActionProvider {
         const seen = new Set<string>();
 
         for (const diag of context.diagnostics) {
-            // 直接挂在 Sonar 自己的诊断上，不再镜像出 [SMELLCC] 诊断
-            if (!isSonarDiagnostic(diag)) {
+            // 两种来源都接受：SMELLCC 自己的品牌镜像，或 Sonar 的原始诊断
+            // （后者保证 mirrorDiagnostics=false 或镜像被抑制时 quick fix 仍然可用）
+            const isMirrored = diag.source === 'SMELLCC';
+            if (!isMirrored && !isSonarDiagnostic(diag)) {
                 continue;
             }
             const ruleId = getRuleIdFromDiagnostic(diag);
@@ -287,11 +365,12 @@ class SmellCCActionProvider implements vscode.CodeActionProvider {
             }
             seen.add(dedupeKey);
 
+            const rawMessage = isMirrored ? diag.message.replace(/^\[SMELLCC\].*?:\s*/, '') : diag.message;
             const action = new vscode.CodeAction(`Refactor: ${smellName} (SMELLCC)`, vscode.CodeActionKind.QuickFix);
             action.command = {
                 command: 'smellcc.refactor',
                 title: 'Refactor',
-                arguments: [document, diag.range, ruleId, diag.message]
+                arguments: [document, diag.range, ruleId, rawMessage]
             };
             action.isPreferred = true;
             action.diagnostics = [diag];

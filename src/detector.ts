@@ -84,3 +84,53 @@ export function isSonarDiagnostic(diagnostic: vscode.Diagnostic): boolean {
 export function isSupportedSonarRule(ruleId: string): boolean {
     return Boolean(RULE_MAPPINGS[ruleId]);
 }
+
+// 5. 品牌镜像：把 Sonar 的诊断镜像成 [SMELLCC] 诊断（默认显示模式）
+export function mirrorSonarDiagnostics(
+    document: vscode.TextDocument,
+    collection: vscode.DiagnosticCollection
+): boolean {
+    const allDiagnostics = vscode.languages.getDiagnostics(document.uri);
+    const smellccDiagnostics: vscode.Diagnostic[] = [];
+
+    for (const diag of allDiagnostics) {
+        if (!isSonarDiagnostic(diag)) {
+            continue;
+        }
+        const ruleId = getRuleIdFromDiagnostic(diag);
+        const displayTitle = RULE_MAPPINGS[ruleId];
+        if (!displayTitle) {
+            continue;
+        }
+
+        const newDiag = new vscode.Diagnostic(
+            diag.range,
+            `[SMELLCC] ${displayTitle}: ${diag.message}`,
+            vscode.DiagnosticSeverity.Warning
+        );
+        newDiag.source = 'SMELLCC';
+        newDiag.code = ruleId;
+        smellccDiagnostics.push(newDiag);
+    }
+
+    // 内容去重：避免 set 触发 onDidChangeDiagnostics 后再镜像一遍自己
+    if (diagnosticsEqual(collection.get(document.uri) ?? [], smellccDiagnostics)) {
+        return false;
+    }
+    collection.set(document.uri, smellccDiagnostics);
+    return true;
+}
+
+function diagnosticsEqual(a: readonly vscode.Diagnostic[], b: readonly vscode.Diagnostic[]): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((diag, index) => {
+        const other = b[index];
+        return diag.range.isEqual(other.range)
+            && diag.message === other.message
+            && diag.severity === other.severity
+            && diag.source === other.source
+            && String(diag.code) === String(other.code);
+    });
+}

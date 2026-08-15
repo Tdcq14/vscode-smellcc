@@ -2,7 +2,7 @@
   "name": "vscode-smellcc",
   "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",
@@ -108,6 +108,11 @@
           "type": "string",
           "default": "deepseek-chat",
           "description": "Model Name (DeepSeek: deepseek-chat or deepseek-reasoner)"
+        },
+        "smellcc.mirrorDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show SMELLCC-branded diagnostics ([SMELLCC] ...) in the Problems panel, mirrored from Sonar. VS Code cannot hide another extension's diagnostics, so Sonar's own entries remain visible unless you filter them out (Problems panel filter: '!sonarqube')."
         },
         "smellcc.autoSaveAfterApply": {
           "type": "boolean",

@@ -180,6 +180,11 @@ function sonarFingerprint(uri: vscode.Uri): string {
         .join('|');
 }
 
+/** 当前 Sonar 诊断集合的指纹（用于判断 Sonar 是否完成了一次重新分析）。 */
+export function getSonarFingerprint(uri: vscode.Uri): string {
+    return sonarFingerprint(uri);
+}
+
 function getSonarDiagnostics(uri: vscode.Uri): vscode.Diagnostic[] {
     return vscode.languages.getDiagnostics(uri).filter(diag => {
         return Boolean(diag.source && diag.source.toLowerCase().includes('sonar'));

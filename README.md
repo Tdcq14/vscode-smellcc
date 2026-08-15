@@ -6,7 +6,7 @@ It leverages Large Language Models (LLM) to refactor the **Top-10** frequent cod
 
 ## ✨ Features
 
-* **🔌 SonarLint Integration**: Quick fixes attach directly to Sonar diagnostics (SonarQube for IDE / SonarLint) — no duplicated warnings in the Problems panel.
+* **🔌 SonarLint Integration**: Uses Sonar diagnostics as the trigger and target signal for supported smell rules. By default SMELLCC also shows its own branded `[SMELLCC]` diagnostics in the Problems panel (can be disabled via `Smellcc: Mirror Diagnostics`).
 * **🧭 Symbol-aware Scope Selection**: Prefers VS Code document symbols to locate the smallest enclosing function/method, with an indentation-based fallback.
 * **🤖 Smell-specific LLM Refactoring**: Builds a prompt from the smell type, exact diagnostic location, target line and enclosing code context.
 * **🔀 Review-before-Apply Diff**: Opens the complete before/after proposal in VS Code's native diff editor before the working file is modified.
@@ -63,7 +63,11 @@ Reject                  Apply
 
 ### Why does SMELLCC depend on SonarQube for IDE?
 
-"SonarQube for IDE" **is** SonarLint — the marketplace renamed the same extension (`sonarsource.sonarlint-vscode`). SMELLCC uses it as the detection engine; there is no kernel-only package. SMELLCC does not mirror or duplicate its diagnostics: the quick fix is attached directly to Sonar's own warnings, so the Problems panel stays clean.
+"SonarQube for IDE" **is** SonarLint — the marketplace renamed the same extension (`sonarsource.sonarlint-vscode`). SMELLCC uses it as the detection engine; there is no kernel-only package.
+
+### Can the Problems panel show only SMELLCC diagnostics?
+
+SMELLCC mirrors supported Sonar findings as branded `[SMELLCC]` diagnostics (setting: `Smellcc: Mirror Diagnostics`, default on). VS Code does not allow one extension to hide another extension's diagnostics, so Sonar's own entries stay visible — unless you filter them out manually: open the **Problems panel filter box and type `!sonarqube`**. With that filter, only the `[SMELLCC]` entries remain. The quick fix is attached to both sources, so the lightbulb works either way.
 
 ### Why a plugin-level diff if the project already uses Git?
 

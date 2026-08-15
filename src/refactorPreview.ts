@@ -43,7 +43,8 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
 
     constructor(
         private readonly context: vscode.ExtensionContext,
-        private readonly history: RefactorHistoryProvider
+        private readonly history: RefactorHistoryProvider,
+        private readonly onSourceMutated?: (uri: vscode.Uri) => void
     ) {
         context.subscriptions.push(
             vscode.workspace.registerTextDocumentContentProvider('smellcc-preview', this),
@@ -182,6 +183,9 @@ export class RefactorPreviewManager implements vscode.TextDocumentContentProvide
             vscode.window.showErrorMessage('SMELLCC: Failed to apply refactor.');
             return false;
         }
+
+        // 源码已变：让外部清掉旧镜像诊断，等 Sonar 重扫完成再恢复
+        this.onSourceMutated?.(snapshot.sourceUri);
 
         const updatedDocument = await vscode.workspace.openTextDocument(snapshot.sourceUri);
         const appliedEnd = updatedDocument.positionAt(snapshot.startOffset + snapshot.after.length);

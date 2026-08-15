@@ -4,6 +4,17 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.0]
+
+### Added
+
+- Branded diagnostics are back by default: SMELLCC mirrors supported Sonar findings as `[SMELLCC]` entries in the Problems panel (setting `smellcc.mirrorDiagnostics`). Quick fixes attach to both SMELLCC's own diagnostics and Sonar's originals, so the lightbulb works in either mode.
+- Fingerprint-based re-sync after Apply: the mirrored diagnostics stay cleared until Sonar's diagnostics actually change (re-analysis completed), with an 8-second fallback — no ghost or disappearing entries.
+
+### Changed
+
+- README documents how to show only SMELLCC entries: VS Code cannot hide another extension's diagnostics, so use the Problems panel filter `!sonarqube` to hide Sonar's raw entries.
+
 ## [0.0.9]
 
 ### Changed
