@@ -2,7 +2,7 @@
   "name": "vscode-smellcc",
   "displayName": "SMELLCC: LLM Code Smell Refactoring",
   "description": "LLM-based Code Smell Refactoring Tool",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "zyhelm",
   "repository": {
     "type": "git",

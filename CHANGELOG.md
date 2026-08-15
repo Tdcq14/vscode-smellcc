@@ -4,6 +4,12 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.5]
+
+### Fixed
+
+- Initial diagnostics sync race: SMELLCC now mirrors Sonar diagnostics immediately at activation (with delayed retries for the async Sonar language server), on active-editor switches, and per changed URI. Quick fixes now appear without requiring a manual save or reopen.
+
 ## [0.0.4]
 
 ### Added

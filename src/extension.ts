@@ -22,17 +22,37 @@ export function activate(context: vscode.ExtensionContext) {
     const historyProvider = new RefactorHistoryProvider(context);
     const previewManager = new RefactorPreviewManager(context, historyProvider);
 
-    const handleDiagnosticsChange = () => {
-        if (vscode.window.activeTextEditor) {
-            mirrorSonarDiagnostics(vscode.window.activeTextEditor.document, diagnosticCollection);
+    const syncDiagnostics = (document?: vscode.TextDocument) => {
+        const targets = document ? [document] : vscode.workspace.textDocuments;
+        for (const doc of targets) {
+            if (doc.languageId === 'python') {
+                mirrorSonarDiagnostics(doc, diagnosticCollection);
+            }
         }
     };
 
     context.subscriptions.push(
-        vscode.languages.onDidChangeDiagnostics(handleDiagnosticsChange),
-        vscode.workspace.onDidOpenTextDocument(handleDiagnosticsChange),
-        vscode.workspace.onDidSaveTextDocument(handleDiagnosticsChange)
+        vscode.languages.onDidChangeDiagnostics(event => {
+            for (const uri of event.uris) {
+                const changedDoc = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
+                if (changedDoc) {
+                    syncDiagnostics(changedDoc);
+                }
+            }
+            // 兜底：语言服务器可能刷新了未出现在 event.uris 里的文档
+            syncDiagnostics();
+        }),
+        vscode.workspace.onDidOpenTextDocument(doc => syncDiagnostics(doc)),
+        vscode.workspace.onDidSaveTextDocument(doc => syncDiagnostics(doc)),
+        vscode.window.onDidChangeActiveTextEditor(editor => syncDiagnostics(editor?.document))
     );
+
+    // 关键修复：激活时立即同步“已经存在”的 Sonar 诊断。
+    // Sonar 语言服务器是异步启动的，激活瞬间可能还没产出诊断，
+    // 所以再按 500ms / 1.5s / 4s 重试几次，避免错过初始事件。
+    syncDiagnostics();
+    const retryTimers = [500, 1500, 4000].map(delay => setTimeout(() => syncDiagnostics(), delay));
+    context.subscriptions.push({ dispose: () => retryTimers.forEach(timer => clearTimeout(timer)) });
 
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new SmellCCActionProvider(), {

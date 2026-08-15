@@ -71,7 +71,7 @@ export function mapRuleToPromptType(ruleId: string): string {
 export function mirrorSonarDiagnostics(
     document: vscode.TextDocument, 
     collection: vscode.DiagnosticCollection
-) {
+): boolean {
     const allDiagnostics = vscode.languages.getDiagnostics(document.uri);
     const smellccDiagnostics: vscode.Diagnostic[] = [];
 
@@ -99,7 +99,27 @@ export function mirrorSonarDiagnostics(
             }
         }
     }
+
+    // 内容去重：避免 set 触发 onDidChangeDiagnostics 后再镜像一遍自己
+    if (diagnosticsEqual(collection.get(document.uri) ?? [], smellccDiagnostics)) {
+        return false;
+    }
     collection.set(document.uri, smellccDiagnostics);
+    return true;
+}
+
+function diagnosticsEqual(a: readonly vscode.Diagnostic[], b: readonly vscode.Diagnostic[]): boolean {
+    if (a.length !== b.length) {
+        return false;
+    }
+    return a.every((diag, index) => {
+        const other = b[index];
+        return diag.range.isEqual(other.range)
+            && diag.message === other.message
+            && diag.severity === other.severity
+            && diag.source === other.source
+            && String(diag.code) === String(other.code);
+    });
 }
 
 // 5. 辅助函数
