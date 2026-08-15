@@ -4,6 +4,12 @@ All notable changes to the "SMELLCC" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.1.1]
+
+### Added
+
+- First-run onboarding: on activation without a configured API key, SMELLCC automatically prompts for the key (stored in SecretStorage) and offers to keep the DeepSeek official base URL (`https://api.deepseek.com`) or enter a custom OpenAI-compatible endpoint. The prompt shows at most once per window.
+
 ## [0.1.0]
 
 ### Added

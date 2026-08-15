@@ -98,6 +98,12 @@ export function activate(context: vscode.ExtensionContext) {
     const retryTimers = [500, 1500, 4000].map(delay => setTimeout(() => syncDiagnostics(), delay));
     context.subscriptions.push({ dispose: () => retryTimers.forEach(timer => clearTimeout(timer)) });
 
+    // 首次安装/未配置 key：延迟 1.5s 自动弹窗引导配置（只弹一次，本窗口内不再打扰）
+    const onboardingTimer = setTimeout(() => {
+        runFirstRunOnboarding().catch(err => console.warn('[SMELLCC] Onboarding skipped:', err));
+    }, 1500);
+    context.subscriptions.push({ dispose: () => clearTimeout(onboardingTimer) });
+
     context.subscriptions.push(
         vscode.languages.registerCodeActionsProvider('python', new SmellCCActionProvider(), {
             providedCodeActionKinds: [vscode.CodeActionKind.QuickFix]
@@ -182,6 +188,69 @@ export function activate(context: vscode.ExtensionContext) {
                 console.error(err);
             }
         })
+    );
+}
+
+let onboardingPrompted = false;
+
+/** 首次安装引导：未配置 API key 时自动弹窗（key 存 SecretStorage，base URL 可选自定义）。 */
+async function runFirstRunOnboarding(): Promise<void> {
+    if (onboardingPrompted) {
+        return;
+    }
+    onboardingPrompted = true;
+    if (await getApiKey()) {
+        return;
+    }
+
+    const key = await vscode.window.showInputBox({
+        title: 'SMELLCC: Welcome — Configure API Key',
+        prompt: 'Paste your DeepSeek API key. It is stored securely in VS Code SecretStorage (never in plaintext settings). Get one at https://platform.deepseek.com',
+        placeHolder: 'sk-...',
+        password: true,
+        ignoreFocusOut: true
+    });
+    if (key === undefined || !key.trim()) {
+        vscode.window.showInformationMessage(
+            'SMELLCC: Setup skipped. Run "SMELLCC: Set API Key" anytime, or just trigger a quick fix — SMELLCC will ask again.'
+        );
+        return;
+    }
+    await storeApiKey(key);
+
+    const urlChoice = await vscode.window.showQuickPick(
+        [
+            {
+                label: '$(check) DeepSeek official (default)',
+                description: 'https://api.deepseek.com',
+                picked: true
+            },
+            {
+                label: 'Custom API base URL...',
+                description: 'Any OpenAI-compatible endpoint'
+            }
+        ],
+        { title: 'SMELLCC: API Base URL', ignoreFocusOut: true }
+    );
+
+    if (urlChoice?.label.startsWith('Custom')) {
+        const customUrl = await vscode.window.showInputBox({
+            title: 'SMELLCC: Custom API Base URL',
+            prompt: 'e.g. https://api.openai.com/v1 — "/chat/completions" is appended automatically',
+            placeHolder: 'https://api.deepseek.com',
+            ignoreFocusOut: true
+        });
+        if (customUrl && customUrl.trim()) {
+            await vscode.workspace.getConfiguration('smellcc').update(
+                'apiBaseUrl',
+                customUrl.trim(),
+                vscode.ConfigurationTarget.Global
+            );
+        }
+    }
+
+    vscode.window.showInformationMessage(
+        'SMELLCC: Setup complete. Model defaults to deepseek-chat; change it anytime in Settings.'
     );
 }
 
